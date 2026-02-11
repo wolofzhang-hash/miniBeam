@@ -66,8 +66,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         dy = ("DY" in p.constraints and p.constraints["DY"].enabled)
         rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
 
-        # lock DZ, RX, RY true to keep 2D? but we can just lock DZ,RX,RY by default for all nodes
-        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=True, support_RY=True, support_RZ=rz)
+        # Lock DZ/RY to keep the model planar in XY, but keep RX free so torsional
+        # DOF is available when users apply nodal MX loads.
+        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=False, support_RY=True, support_RZ=rz)
 
         if dx and abs(p.constraints["DX"].value) > 0:
             model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
