@@ -409,6 +409,7 @@ class BeamCanvas(QGraphicsView):
             self._bg_item = QGraphicsPixmapItem()
             self._bg_item.setZValue(-10)
             self.scene.addItem(self._bg_item)
+        self._bg_item.setVisible(True)
         self._apply_background_pixmap()
         self._bg_item.setOpacity(self._bg_opacity)
 
@@ -440,6 +441,12 @@ class BeamCanvas(QGraphicsView):
     def set_background_grayscale(self, on: bool):
         self._bg_gray = bool(on)
         self._apply_background_pixmap()
+
+    def set_background_visible(self, on: bool):
+        if self._bg_item is None:
+            return
+        self._bg_item.setVisible(bool(on))
+
 
     def _apply_background_pixmap(self):
         if self._bg_item is None or self._bg_pixmap_src is None:

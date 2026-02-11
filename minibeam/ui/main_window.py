@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._connect()
+        self._sync_background_visibility_action()
         self._schedule_refresh()
 
         self.last_results: SolveOutput | None = None
@@ -132,6 +133,9 @@ class MainWindow(QMainWindow):
         self.act_bg_opacity = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), "Opacity", self)
         self.act_bg_bw = QAction(self._std_icon("SP_FileDialogDetailedView", "SP_FileDialogListView"), "B/W", self)
         self.act_bg_bw.setCheckable(True)
+        self.act_bg_visible = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Show Background", self)
+        self.act_bg_visible.setCheckable(True)
+        self.act_bg_visible.setChecked(True)
         self.act_bg_clear = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCancelButton"), "Clear", self)
 
         self.act_validate = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), "Validate", self)
@@ -198,20 +202,13 @@ class MainWindow(QMainWindow):
             mk_group("Assign", [self.act_assign_mat, self.act_assign_sec]),
         ])
 
-        mk_tab("Constraints", [
+        mk_tab("Constraints & Loads", [
             mk_group("Constraints", [self.act_add_dx]),
-        ])
-
-        mk_tab("Loads", [
             mk_group("Loads", [self.act_add_fy, self.act_add_udl]),
         ])
 
         mk_tab("Background", [
-            mk_group("Background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_clear]),
-        ])
-
-        mk_tab("Solve", [
-            mk_group("Solve", [self.act_validate, self.act_solve]),
+            mk_group("Background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
         ])
 
         # Results: dropdown + plot
@@ -229,7 +226,8 @@ class MainWindow(QMainWindow):
         self.cmb_result_type.setMinimumWidth(160)
         self.cmb_result_type.setToolTip("Select result type")
 
-        mk_tab("Results", [
+        mk_tab("Solve & Results", [
+            mk_group("Solve", [self.act_validate, self.act_solve]),
             mk_group("Results", [self.cmb_result_type, self.act_show_results, self.act_export_csv, self.act_back_to_model]),
         ])
 
@@ -326,6 +324,7 @@ class MainWindow(QMainWindow):
         self.act_bg_calibrate.triggered.connect(self.calibrate_background)
         self.act_bg_opacity.triggered.connect(self.set_background_opacity)
         self.act_bg_bw.toggled.connect(self.toggle_background_bw)
+        self.act_bg_visible.toggled.connect(self.toggle_background_visible)
         self.act_bg_clear.triggered.connect(self.clear_background)
 
         # --- Solve / Results ---
@@ -1143,6 +1142,15 @@ class MainWindow(QMainWindow):
 
 
 
+    def _sync_background_visibility_action(self):
+        has_bg = getattr(self.canvas, "_bg_item", None) is not None
+        visible = bool(has_bg and self.canvas._bg_item.isVisible())
+        self.act_bg_visible.blockSignals(True)
+        self.act_bg_visible.setChecked(visible if has_bg else True)
+        self.act_bg_visible.blockSignals(False)
+        self.act_bg_visible.setEnabled(has_bg)
+        self.act_bg_visible.setText("Hide Background" if visible else "Show Background")
+
     # ---------------- Background ----------------
     def import_background(self):
         fn, _ = QFileDialog.getOpenFileName(self, "Import Background Image", "", "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)")
@@ -1153,6 +1161,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Background", "Failed to load image.")
             return
         self.canvas.set_background(pix)
+        self._sync_background_visibility_action()
         self._schedule_refresh()
 
     def calibrate_background(self):
@@ -1184,8 +1193,16 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Background", f"Failed to set B/W: {e}")
 
+    def toggle_background_visible(self, on: bool):
+        try:
+            self.canvas.set_background_visible(bool(on))
+            self.act_bg_visible.setText("Hide Background" if on else "Show Background")
+        except Exception as e:
+            QMessageBox.critical(self, "Background", f"Failed to toggle visibility: {e}")
+
     def clear_background(self):
         self.canvas.clear_background()
+        self._sync_background_visibility_action()
         self._schedule_refresh()
 
     # ---------------- Constraints dialog ----------------
