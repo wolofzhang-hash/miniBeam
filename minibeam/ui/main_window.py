@@ -757,30 +757,35 @@ class MainWindow(QMainWindow):
             with open(fn, "w", newline="", encoding="utf-8-sig") as f:
                 w = csv.writer(f)
 
-                # --- NODES ---
-                w.writerow(["TYPE", "name", "x_mm", "dy_mm", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm"])
+                # Unified table header (avoid duplicated header blocks)
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
                 for i, p in enumerate(pts_sorted, start=1):
                     r = out.reactions.get(p.name, {}) if getattr(out, "reactions", None) else {}
                     w.writerow([
                         "NODE",
                         p.name,
+                        "",
                         f"{x_nodes[i-1]:.6f}",
                         f"{dy_nodes[i-1]:.9g}",
                         f"{float(r.get('FX', 0.0)):.9g}",
                         f"{float(r.get('FY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
+                        "",
+                        "",
+                        "",
+                        "",
                     ])
 
-                w.writerow([])
-
-                # --- DIAGRAMS ---
-                w.writerow(["TYPE", "combo", "x_mm", "dy_mm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
                 for i in range(len(x)):
                     w.writerow([
                         "DIAG",
+                        "",
                         out.combo,
                         f"{x[i]:.6f}",
                         f"{dy[i]:.9g}",
+                        "",
+                        "",
+                        "",
                         f"{V[i]:.9g}" if i < len(V) else "",
                         f"{M[i]:.9g}" if i < len(M) else "",
                         f"{sigma[i]:.9g}" if i < len(sigma) else "",

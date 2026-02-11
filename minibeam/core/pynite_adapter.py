@@ -102,12 +102,12 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             "MZ": node.RxnMZ.get(combo.name, 0.0),
         }
 
-    # diagrams along entire beam by stitching member arrays
-    xs_all: List[float] = []
-    V_all: List[float] = []
-    M_all: List[float] = []
-    sigma_all: List[float] = []
-    margin_all: List[float] = []
+    # diagrams: build a unified global x list (default 100 divisions + all beam points)
+    beam_xs = [p.x for p in pts_sorted]
+    x_min = float(min(beam_xs)) if beam_xs else 0.0
+    x_max = float(max(beam_xs)) if beam_xs else 0.0
+    base_diag_x = np.linspace(x_min, x_max, 101) if x_max > x_min else np.array([x_min], dtype=float)
+    x_diag = np.array(_merge_unique_x([*base_diag_x.tolist(), *beam_xs]), dtype=float)
 
     # Allowable stress
     # Use active material (if set) else first material
@@ -117,10 +117,12 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
-        # arrays in member local coordinates. Use n points including ends.
-        n = max(2, int(n_samples_per_member))
+        # arrays in member local coordinates, then interpolate to unified global x.
+        n = max(21, int(n_samples_per_member))
         try:
             xloc, V = mem.shear_array("Fy", n, combo_name=combo.name)
             _, M = mem.moment_array("Mz", n, combo_name=combo.name)
@@ -129,37 +131,76 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             xloc, V = mem.shear_array("Fy", n)
             _, M = mem.moment_array("Mz", n)
 
+        xloc = np.asarray(xloc, dtype=float)
+        V = np.asarray(V, dtype=float)
+        M = np.asarray(M, dtype=float)
+
         # map to global x
         xi = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name]).X
         xj = (model.nodes[mem.j_node.name] if hasattr(model,'nodes') else model.Nodes[mem.j_node.name]).X
         L = xj - xi
-        xg = xi + np.array(xloc)*L
+        xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
+        x_local_mm = xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
+        xg = xi + x_local_mm
 
-        # avoid duplicating joints
-        if xs_all:
-            xg = xg[1:]
-            V = V[1:]
-            M = M[1:]
+        order = np.argsort(xg)
+        xg = xg[order]
+        V = V[order]
+        M = M[order]
 
         sec = prj.sections[m.section_uid]
         # bending stress sigma = M*c/I (Mz uses Iz & c_z)
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
         margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        xs_all.extend(list(xg))
-        V_all.extend(list(V))
-        M_all.extend(list(M))
-        sigma_all.extend(list(sigma))
-        margin_all.extend(list(margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, V, M, sigma, margin))
+
+    V_all = np.zeros_like(x_diag, dtype=float)
+    M_all = np.zeros_like(x_diag, dtype=float)
+    sigma_all = np.zeros_like(x_diag, dtype=float)
+    margin_all = np.zeros_like(x_diag, dtype=float)
+
+    for idx, x in enumerate(x_diag):
+        mdata = _pick_member_curve(member_curves, float(x))
+        if mdata is None:
+            continue
+        _, _, xg, V, M, sigma, margin = mdata
+        V_all[idx] = np.interp(x, xg, V)
+        M_all[idx] = np.interp(x, xg, M)
+        sigma_all[idx] = np.interp(x, xg, sigma)
+        margin_all[idx] = np.interp(x, xg, margin)
 
     return SolveOutput(
         combo=combo.name,
         x_nodes=x_nodes,
         dy_nodes=dy_nodes,
         reactions=reactions,
-        x_diag=np.array(xs_all),
+        x_diag=np.array(x_diag),
         V=np.array(V_all),
         M=np.array(M_all),
         sigma=np.array(sigma_all),
         margin=np.array(margin_all),
     )
+
+
+def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
+    arr = sorted(float(v) for v in values)
+    if not arr:
+        return []
+    merged = [arr[0]]
+    for v in arr[1:]:
+        if abs(v - merged[-1]) > eps:
+            merged.append(v)
+    return merged
+
+
+def _pick_member_curve(
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    x: float,
+    eps: float = 1e-9,
+):
+    for m in member_curves:
+        x0, x1 = m[0], m[1]
+        if x0 - eps <= x <= x1 + eps:
+            return m
+    return member_curves[-1] if member_curves else None
