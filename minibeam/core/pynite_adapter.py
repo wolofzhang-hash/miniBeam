@@ -224,9 +224,6 @@ def _to_mm(xloc: np.ndarray, L: float) -> np.ndarray:
 
 
 def _sort2(x: np.ndarray, y: np.ndarray):
-    n = min(x.size, y.size)
-    x = x[:n]
-    y = y[:n]
     if x.size == 0:
         return x, y
     o = np.argsort(x)
@@ -234,11 +231,6 @@ def _sort2(x: np.ndarray, y: np.ndarray):
 
 
 def _sort4(x: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray):
-    n = min(x.size, a.size, b.size, c.size)
-    x = x[:n]
-    a = a[:n]
-    b = b[:n]
-    c = c[:n]
     if x.size == 0:
         return x, a, b, c
     o = np.argsort(x)
@@ -286,34 +278,9 @@ def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str
     last_error = None
     for f in attempts:
         try:
-            return _normalize_member_result(f())
+            return f()
         except Exception as e:
             last_error = e
     if allow_fail:
         return np.array([0.0, 1.0]), np.zeros(2)
     raise PyniteSolverError(f"无法读取 member {method_name}({direction}) 结果: {last_error}")
-
-
-def _normalize_member_result(result):
-    """Normalize PyNite member array output into (x, y) 1D arrays.
-
-    PyNite APIs vary by version and may return:
-    - tuple/list: (x, y)
-    - array shaped (2, N)
-    - array shaped (N, 2)
-    This helper converts all these variants into matching 1D arrays.
-    """
-    if isinstance(result, (tuple, list)) and len(result) == 2:
-        x = np.asarray(result[0], dtype=float).reshape(-1)
-        y = np.asarray(result[1], dtype=float).reshape(-1)
-        if x.size == y.size:
-            return x, y
-
-    arr = np.asarray(result, dtype=float)
-    if arr.ndim == 2:
-        if arr.shape[0] == 2:
-            return arr[0].reshape(-1), arr[1].reshape(-1)
-        if arr.shape[1] == 2:
-            return arr[:, 0].reshape(-1), arr[:, 1].reshape(-1)
-
-    raise ValueError(f"Unexpected member result shape: {arr.shape}")
