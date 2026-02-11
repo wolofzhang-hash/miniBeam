@@ -6,14 +6,13 @@ A small 1D beam FEM GUI tool (Ribbon-like UI + right-click modeling) using **PyN
 - Right-click add points on a 1D axis; drag points along X only; double-click to edit X.
 - Auto-build members left-to-right (M1..Mn).
 - Materials manager; Sections wizard (Rect solid, Circle solid, I section).
-- Constraints: UX / UY / RZ / RX (value supported; default 0).
-- Loads: nodal Fy, nodal Mz, nodal Mx(torque), member UDL (w in Y).
+- Constraints: UX / UY / RZ (value supported; default 0).
+- Loads: nodal Fy, nodal Mz, member UDL (w in Y).
 - Solve (linear) using Pynite; results:
   - FBD (loads + reactions)
   - Deflection (DY along beam, sampled on unified diagram x, scaled)
-  - Rotation θ (RZ) / Torsion RX / Shear V (Fy) / Moment M (Mz) / Torque T (Mx) diagrams (member arrays)
-  - Stress set: bending stress σ, torsional shear τt, combined stress σeq (von Mises with shear+torsion)
-  - Margin: elastic MS and plastic-corrected MS (uses section Zp and shape factor k=Zp/Ze)
+  - Rotation θ (RZ) / Shear V (Fy) / Moment M (Mz) diagrams (member arrays)
+  - Stress (sigma_bend from M*c/I) and Margin (sigma_y/FS / |sigma| - 1)
 
 ## Install
 ```bash

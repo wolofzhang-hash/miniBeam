@@ -342,7 +342,7 @@ class SectionManagerDialog(QDialog):
         # preview + computed props
         self.preview = SectionPreview()
         right.addWidget(self.preview)
-        self.lbl_props = QLabel("A= -   Iy= -   Iz= -   J= -   Zp= -   k= -")
+        self.lbl_props = QLabel("A= -   Iy= -   Iz= -   J= -")
         self.lbl_props.setWordWrap(True)
         right.addWidget(self.lbl_props)
 
@@ -395,9 +395,9 @@ class SectionManagerDialog(QDialog):
                 props = circle_hollow(p1, p2)
             else:
                 props = i_section(p1, p2, p3, p4)
-            self.lbl_props.setText(f"A={props.A:.3f} mm²   Iy={props.Iy:.3f} mm⁴   Iz={props.Iz:.3f} mm⁴   J={props.J:.3f} mm⁴   Zp={props.Zp:.3f} mm³   k={props.shape_factor:.3f}")
+            self.lbl_props.setText(f"A={props.A:.3f} mm²   Iy={props.Iy:.3f} mm⁴   Iz={props.Iz:.3f} mm⁴   J={props.J:.3f} mm⁴")
         except Exception:
-            self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -   Zp= -   k= -")
+            self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -")
 
     def _update_hint(self, typ: str):
         param_defs = {
@@ -489,7 +489,7 @@ class SectionManagerDialog(QDialog):
         if uid and uid in self.prj.sections and self.prj.sections[uid].name == name:
             s = self.prj.sections[uid]
             s.type = typ
-            s.A, s.Iy, s.Iz, s.J, s.c_z, s.c_t, s.Zp = props.A, props.Iy, props.Iz, props.J, props.c_z, props.c_t, props.Zp
+            s.A, s.Iy, s.Iz, s.J, s.c_z = props.A, props.Iy, props.Iz, props.J, props.c_z
             s.p1, s.p2, s.p3, s.p4 = float(self.sp1.value()), float(self.sp2.value()), float(self.sp3.value()), float(self.sp4.value())
         else:
             s = Section(
@@ -500,8 +500,6 @@ class SectionManagerDialog(QDialog):
                 Iz=props.Iz,
                 J=props.J,
                 c_z=props.c_z,
-                c_t=props.c_t,
-                Zp=props.Zp,
                 p1=float(self.sp1.value()),
                 p2=float(self.sp2.value()),
                 p3=float(self.sp3.value()),

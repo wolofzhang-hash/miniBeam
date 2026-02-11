@@ -3,12 +3,10 @@ from dataclasses import dataclass
 from typing import List
 from .model import Project
 
-
 @dataclass
 class ValidationMessage:
     level: str  # 'ERROR' or 'WARN'
     text: str
-
 
 def validate_project(prj: Project) -> List[ValidationMessage]:
     msgs: List[ValidationMessage] = []
@@ -29,6 +27,13 @@ def validate_project(prj: Project) -> List[ValidationMessage]:
 
     # Stability heuristic (2D planar frame): the structure must resist
     # rigid-body translation in Y and rigid-body rotation about Z.
+    #
+    # For a 1D beam along the X axis (all nodes at y=0), a single DY support
+    # prevents global Y translation. Rotation can be prevented either by:
+    #   - at least one RZ constraint, OR
+    #   - DY constraints at two (or more) distinct X locations (e.g. two pinned
+    #     supports). This matches typical 2D beam usage: two pinned supports are
+    #     stable without explicitly constraining RZ.
     dy_xs = []
     has_rz = False
     for p in prj.points.values():
@@ -41,16 +46,13 @@ def validate_project(prj: Project) -> List[ValidationMessage]:
     if len(dy_xs) == 0:
         msgs.append(ValidationMessage("ERROR", "模型缺少 UY(DY) 约束，可能整体漂移。"))
     else:
+        # rotation check
         rot_ok = has_rz
         if not rot_ok:
+            # If there are at least two DY supports at different X, rotation is restrained
             dy_xs_sorted = sorted(set(round(x, 9) for x in dy_xs))
             rot_ok = len(dy_xs_sorted) >= 2
         if not rot_ok:
             msgs.append(ValidationMessage("WARN", "模型可能欠约束：建议至少两个不同位置的 UY(DY) 约束，或在某个点锁定 RZ。"))
-
-    has_mx_load = any(ld.direction == "MX" and abs(ld.value) > 1e-12 for p in prj.points.values() for ld in p.nodal_loads)
-    has_rx = any((p.constraints.get("RX") is not None and p.constraints["RX"].enabled) for p in prj.points.values())
-    if has_mx_load and not has_rx:
-        msgs.append(ValidationMessage("WARN", "存在扭矩(MX)荷载但没有RX约束，可能发生扭转刚体转动。"))
 
     return msgs
