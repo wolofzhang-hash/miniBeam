@@ -790,7 +790,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
             return
 
-        QMessageBox.information(self, "Export CSV", f"已导出：\nresults_view.cpython-311.pyc")
+        QMessageBox.information(self, "Export CSV", f"已导出：\n{fn}")
 
     def on_point_added(self, x: float):
         before = self.project.to_dict()
