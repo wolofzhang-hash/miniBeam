@@ -799,16 +799,10 @@ class MainWindow(QMainWindow):
                             f"{margin[i]:.9g}" if i < len(margin) else "",
                         ])
 
-                    x_vals = np.asarray(x, dtype=float)
-                    for row in node_rows:
-                        x_node = float(row[3])
-                        idx = int(np.argmin(np.abs(x_vals - x_node))) if x_vals.size else -1
-                        if idx >= 0 and abs(float(x_vals[idx]) - x_node) <= 1e-6:
-                            diag_rows[idx] = row
-                        else:
-                            diag_rows.append(row)
-
-                    for row in sorted(diag_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
+                    # Keep DIAG rows untouched so exported V/M source data stays
+                    # strictly consistent with plotted arrays.
+                    merged_rows = [*diag_rows, *node_rows]
+                    for row in sorted(merged_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
                         w.writerow(row)
         except Exception as e:
             QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
