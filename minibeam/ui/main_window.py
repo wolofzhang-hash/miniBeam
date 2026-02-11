@@ -352,7 +352,11 @@ class MainWindow(QMainWindow):
 
         # Delete key (redundant to QAction shortcut; keeps behaviour even if focus is on canvas)
         self.shortcut_delete = QShortcut(QKeySequence(Qt.Key.Key_Delete), self)
+        self.shortcut_delete.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self.shortcut_delete.activated.connect(self.delete_selected_points)
+        self.shortcut_backspace = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self)
+        self.shortcut_backspace.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.shortcut_backspace.activated.connect(self.delete_selected_points)
 
 
     def set_model_mode(self, mode: str):

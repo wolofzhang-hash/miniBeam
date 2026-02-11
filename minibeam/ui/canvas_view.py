@@ -127,6 +127,10 @@ class BeamCanvas(QGraphicsView):
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
 
+        # Ensure the view/viewport can receive keyboard events (Delete/Backspace).
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.viewport().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         # Connect once. Re-connecting on every redraw can lead to duplicated
         # signals (and in rare cases crashes when combined with scene clears).
         self.scene.selectionChanged.connect(self._on_selection_changed)
@@ -236,6 +240,8 @@ class BeamCanvas(QGraphicsView):
             t.setPos(mid - 10, -28)
             t.setBrush(Qt.GlobalColor.darkBlue)
             t.setZValue(5)
+            t.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            t.setAcceptHoverEvents(False)
             self.scene.addItem(t)
             self._labels.append(t)
 
@@ -245,6 +251,8 @@ class BeamCanvas(QGraphicsView):
             t.setPos(p.x - 8, 10)
             t.setBrush(Qt.GlobalColor.black)
             t.setZValue(12)
+            t.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            t.setAcceptHoverEvents(False)
             self.scene.addItem(t)
             self._labels.append(t)
 
@@ -253,6 +261,8 @@ class BeamCanvas(QGraphicsView):
                 c.setPos(p.x - 10, -55)
                 c.setBrush(Qt.GlobalColor.darkRed)
                 c.setZValue(12)
+                c.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                c.setAcceptHoverEvents(False)
                 self.scene.addItem(c)
                 self._labels.append(c)
             if "RZ" in p.constraints and p.constraints["RZ"].enabled:
@@ -260,6 +270,8 @@ class BeamCanvas(QGraphicsView):
                 c.setPos(p.x - 10, -70)
                 c.setBrush(Qt.GlobalColor.darkRed)
                 c.setZValue(12)
+                c.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                c.setAcceptHoverEvents(False)
                 self.scene.addItem(c)
                 self._labels.append(c)
 
@@ -555,6 +567,8 @@ class BeamCanvas(QGraphicsView):
     # events
     def mousePressEvent(self, event):
         self.begin_interaction()
+        # Keep keyboard focus on canvas after clicking so delete hotkeys work.
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
 
         # Right-button pan
         if event.button() == Qt.MouseButton.RightButton:
@@ -770,3 +784,12 @@ class BeamCanvas(QGraphicsView):
             # delete actions per the user's workflow.
 
         menu.exec(event.globalPos())
+
+    def keyPressEvent(self, event):
+        # Make point deletion robust when focus is on the canvas viewport.
+        # Some environments/laptop keyboards send Backspace rather than Delete.
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.request_delete_selected_points.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
