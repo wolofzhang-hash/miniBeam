@@ -49,6 +49,25 @@ class ResultsView(QWidget):
             mask = (xa >= x0 - 1e-9) & (xa <= x1 + 1e-9)
             return xa[mask], ya[mask]
 
+        def _sorted_xy(xa, ya):
+            xa = np.asarray(xa, dtype=float)
+            ya = np.asarray(ya, dtype=float)
+            if xa.size == 0 or ya.size == 0:
+                return xa, ya
+            n = min(xa.size, ya.size)
+            xa = xa[:n]
+            ya = ya[:n]
+            mask = np.isfinite(xa) & np.isfinite(ya)
+            xa = xa[mask]
+            ya = ya[mask]
+            if xa.size == 0:
+                return xa, ya
+            order = np.argsort(xa, kind="mergesort")
+            return xa[order], ya[order]
+
+        def _zero_axis():
+            ax.axhline(0, linewidth=0.9, color="#666666", linestyle="--", zorder=0)
+
         if rtype == "FBD":
             # Plot baseline and show loads/reactions at nodes
             x = _norm(out.x_nodes)
@@ -72,7 +91,7 @@ class ResultsView(QWidget):
             x = _norm(out.x_nodes)
             dy = np.array(out.dy_nodes) * def_scale
             ax.plot(x, dy)
-            ax.axhline(0, linewidth=1)
+            _zero_axis()
             ax.set_xlabel("x (mm)")
             ax.set_ylabel(f"DY x{def_scale:g} (mm)")
             ax.set_title("Deflection (scaled)")
@@ -82,16 +101,18 @@ class ResultsView(QWidget):
 
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
+            xv, yv = _sorted_xy(xv, yv)
             ax.plot(_norm(xv), yv)
-            ax.axhline(0, linewidth=1)
+            _zero_axis()
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("V (N)")
             ax.set_title("Shear V (Fy)")
 
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
+            xm, ym = _sorted_xy(xm, ym)
             ax.plot(_norm(xm), ym)
-            ax.axhline(0, linewidth=1)
+            _zero_axis()
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
@@ -99,7 +120,7 @@ class ResultsView(QWidget):
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
-            ax.axhline(0, linewidth=1)
+            _zero_axis()
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("sigma (N/mm²)")
             ax.set_title("Bending Stress sigma = M*c/I")
@@ -107,7 +128,7 @@ class ResultsView(QWidget):
         elif rtype == "Margin MS":
             xm2, ym2 = _clip(out.x_diag, out.margin)
             ax.plot(_norm(xm2), ym2)
-            ax.axhline(0, linewidth=1)
+            _zero_axis()
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("MS")
             ax.set_title("Margin of Safety (allow/|sigma|-1)")

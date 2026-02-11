@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QStyle, QFileDialog
 import sys
 import traceback
 import json
+from pathlib import Path
 import numpy as np
 
 from ..core.model import Project, Material, Section, Constraint, NodalLoad
@@ -753,6 +754,36 @@ class MainWindow(QMainWindow):
             V = M = sigma = margin = np.array([], dtype=float)
 
         import csv
+
+        out_path = Path(fn)
+        shear_debug_path = out_path.with_name(f"{out_path.stem}_debug_shear_xy{out_path.suffix}")
+        moment_debug_path = out_path.with_name(f"{out_path.stem}_debug_moment_xy{out_path.suffix}")
+
+        def _write_diag_xy_debug(debug_path: Path, x_abs: np.ndarray, x_norm: np.ndarray, y_vals: np.ndarray, y_label: str):
+            x_abs = np.asarray(x_abs, dtype=float)
+            x_norm = np.asarray(x_norm, dtype=float)
+            y_vals = np.asarray(y_vals, dtype=float)
+            n = min(x_abs.size, x_norm.size, y_vals.size)
+            x_abs = x_abs[:n]
+            x_norm = x_norm[:n]
+            y_vals = y_vals[:n]
+            sort_order = np.argsort(x_abs, kind="mergesort") if n else np.array([], dtype=int)
+
+            with open(debug_path, "w", newline="", encoding="utf-8-sig") as f_dbg:
+                w_dbg = csv.writer(f_dbg)
+                w_dbg.writerow(["idx_raw", "x_abs_mm", "x_plot_mm", y_label, "x_abs_sorted_mm", "x_plot_sorted_mm", f"{y_label}_sorted"])
+                for i in range(n):
+                    j = int(sort_order[i]) if i < sort_order.size else -1
+                    w_dbg.writerow([
+                        i,
+                        f"{x_abs[i]:.9g}",
+                        f"{x_norm[i]:.9g}",
+                        f"{y_vals[i]:.9g}",
+                        f"{x_abs[j]:.9g}" if j >= 0 else "",
+                        f"{x_norm[j]:.9g}" if j >= 0 else "",
+                        f"{y_vals[j]:.9g}" if j >= 0 else "",
+                    ])
+
         try:
             with open(fn, "w", newline="", encoding="utf-8-sig") as f:
                 w = csv.writer(f)
@@ -778,27 +809,29 @@ class MainWindow(QMainWindow):
                         "",
                     ])
 
-                if len(x) == 0:
+                # Keep one unified, x-ascending line list as the source-of-truth for
+                # diagram data, then merge node identity/reactions into matching x.
+                line_rows = []
+                for i in range(len(x)):
+                    line_rows.append([
+                        "DIAG",
+                        "",
+                        out.combo,
+                        f"{x[i]:.6f}",
+                        f"{dy[i]:.9g}",
+                        "",
+                        "",
+                        "",
+                        f"{V[i]:.9g}" if i < len(V) else "",
+                        f"{M[i]:.9g}" if i < len(M) else "",
+                        f"{sigma[i]:.9g}" if i < len(sigma) else "",
+                        f"{margin[i]:.9g}" if i < len(margin) else "",
+                    ])
+
+                if len(line_rows) == 0:
                     for row in node_rows:
                         w.writerow(row)
                 else:
-                    diag_rows = []
-                    for i in range(len(x)):
-                        diag_rows.append([
-                            "DIAG",
-                            "",
-                            out.combo,
-                            f"{x[i]:.6f}",
-                            f"{dy[i]:.9g}",
-                            "",
-                            "",
-                            "",
-                            f"{V[i]:.9g}" if i < len(V) else "",
-                            f"{M[i]:.9g}" if i < len(M) else "",
-                            f"{sigma[i]:.9g}" if i < len(sigma) else "",
-                            f"{margin[i]:.9g}" if i < len(margin) else "",
-                        ])
-
                     x_vals = np.asarray(x, dtype=float)
                     for row in node_rows:
                         x_node = float(row[3])
@@ -806,7 +839,7 @@ class MainWindow(QMainWindow):
                         if idx >= 0 and abs(float(x_vals[idx]) - x_node) <= 1e-6:
                             # Keep diagram values (V/M/sigma/MS) at node positions while
                             # injecting node identity and reactions into the same row.
-                            merged_row = list(diag_rows[idx])
+                            merged_row = list(line_rows[idx])
                             merged_row[0] = row[0]
                             merged_row[1] = row[1]
                             merged_row[2] = row[2]
@@ -815,17 +848,28 @@ class MainWindow(QMainWindow):
                             merged_row[5] = row[5]
                             merged_row[6] = row[6]
                             merged_row[7] = row[7]
-                            diag_rows[idx] = merged_row
+                            line_rows[idx] = merged_row
                         else:
-                            diag_rows.append(row)
+                            line_rows.append(row)
 
-                    for row in sorted(diag_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
+                    for row in sorted(line_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
                         w.writerow(row)
         except Exception as e:
             QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
             return
 
-        QMessageBox.information(self, "Export CSV", f"已导出：\n{fn}")
+        try:
+            _write_diag_xy_debug(shear_debug_path, xg, x, V, "V_N")
+            _write_diag_xy_debug(moment_debug_path, xg, x, M, "M_Nmm")
+        except Exception as e:
+            QMessageBox.warning(self, "Export CSV", f"主表已导出，但调试XY导出失败：{e}")
+            return
+
+        QMessageBox.information(
+            self,
+            "Export CSV",
+            f"已导出：\n{fn}\n\n调试XY：\n{shear_debug_path}\n{moment_debug_path}",
+        )
 
     def on_point_added(self, x: float):
         before = self.project.to_dict()
