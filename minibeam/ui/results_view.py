@@ -72,8 +72,13 @@ class ResultsView(QWidget):
             ax.set_title("Free Body Diagram (Reactions shown)")
 
         elif rtype == "Deflection":
-            x = _norm(out.x_nodes)
-            dy = np.array(out.dy_nodes) * def_scale
+            if getattr(out, "x_diag", None) is not None and np.asarray(out.x_diag).size:
+                x, dy_raw = _clip(out.x_diag, out.dy_diag)
+                x = _norm(x)
+                dy = np.asarray(dy_raw, dtype=float) * def_scale
+            else:
+                x = _norm(out.x_nodes)
+                dy = np.asarray(out.dy_nodes, dtype=float) * def_scale
             ax.plot(x, dy)
             _draw_zero_line()
             ax.set_xlabel("x (mm)")
@@ -82,6 +87,14 @@ class ResultsView(QWidget):
 
             idx = int(np.argmin(dy))
             ax.annotate(f"min {dy[idx]:.3f}", (x[idx], dy[idx]))
+
+        elif rtype == "Rotation θ":
+            xr, yr = _clip(out.x_diag, out.rz_diag)
+            ax.plot(_norm(xr), yr)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("θz (rad)")
+            ax.set_title("Rotation θ (RZ)")
 
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)

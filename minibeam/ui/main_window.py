@@ -219,6 +219,7 @@ class MainWindow(QMainWindow):
         self.cmb_result_type = QComboBox()
         self.cmb_result_type.addItems([
             "Deflection",
+            "Rotation θ",
             "FBD",
             "Shear V",
             "Moment M",
@@ -734,22 +735,12 @@ class MainWindow(QMainWindow):
             M = np.asarray(getattr(out, "M", []), dtype=float)[mask]
             sigma = np.asarray(getattr(out, "sigma", []), dtype=float)[mask]
             margin = np.asarray(getattr(out, "margin", []), dtype=float)[mask]
-
-            # Deflection on diagram x: interpolate nodal DY
-            try:
-                xn_abs = np.asarray(getattr(out, "x_nodes", []), dtype=float)
-                dyn = np.asarray(getattr(out, "dy_nodes", []), dtype=float)
-                if xn_abs.size >= 2:
-                    dy = np.interp(xg, xn_abs, dyn)
-                elif xn_abs.size == 1:
-                    dy = np.full_like(xg, dyn[0])
-                else:
-                    dy = np.zeros_like(xg)
-            except Exception:
-                dy = np.zeros_like(xg)
+            dy = np.asarray(getattr(out, "dy_diag", np.zeros_like(xg)), dtype=float)[mask]
+            rz = np.asarray(getattr(out, "rz_diag", np.zeros_like(xg)), dtype=float)[mask]
         else:
             x = np.array([], dtype=float)
             dy = np.array([], dtype=float)
+            rz = np.array([], dtype=float)
             V = M = sigma = margin = np.array([], dtype=float)
 
         import csv
@@ -758,7 +749,7 @@ class MainWindow(QMainWindow):
                 w = csv.writer(f)
 
                 # Unified table header (avoid duplicated header blocks)
-                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
 
                 node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
@@ -769,6 +760,7 @@ class MainWindow(QMainWindow):
                         "",
                         f"{x_nodes[i-1]:.6f}",
                         f"{dy_nodes[i-1]:.9g}",
+                        "",
                         f"{float(r.get('FX', 0.0)):.9g}",
                         f"{float(r.get('FY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
@@ -790,6 +782,7 @@ class MainWindow(QMainWindow):
                             out.combo,
                             f"{x[i]:.6f}",
                             f"{dy[i]:.9g}",
+                            f"{rz[i]:.9g}" if i < len(rz) else "",
                             "",
                             "",
                             "",
@@ -812,9 +805,9 @@ class MainWindow(QMainWindow):
                             merged_row[2] = row[2]
                             merged_row[3] = row[3]
                             merged_row[4] = row[4]
-                            merged_row[5] = row[5]
                             merged_row[6] = row[6]
                             merged_row[7] = row[7]
+                            merged_row[8] = row[8]
                             diag_rows[idx] = merged_row
                         else:
                             diag_rows.append(row)
