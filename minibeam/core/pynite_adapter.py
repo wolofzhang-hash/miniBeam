@@ -10,67 +10,60 @@ try:
 except Exception:  # pragma: no cover
     FEModel3D = None
 
-
 @dataclass
 class SolveOutput:
     combo: str
     x_nodes: List[float]
     dy_nodes: List[float]
-    reactions: Dict[str, Dict[str, float]]
+    reactions: Dict[str, Dict[str, float]]  # point_name -> {FY, MZ, FX}
+    # diagrams (global x coordinate arrays)
     x_diag: np.ndarray
     dy_diag: np.ndarray
     rz_diag: np.ndarray
-    rx_diag: np.ndarray
     V: np.ndarray
     M: np.ndarray
-    T: np.ndarray
+    # stress/margin sampled on same x_diag
     sigma: np.ndarray
-    tau_v: np.ndarray
-    tau_t: np.ndarray
-    sigma_eq: np.ndarray
     margin: np.ndarray
-    margin_plastic: np.ndarray
-
 
 class PyniteSolverError(RuntimeError):
     pass
-
 
 def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int = 20) -> SolveOutput:
     if FEModel3D is None:
         raise PyniteSolverError("未安装 PyNiteFEA/Pynite。请先 `pip install PyNiteFEA`。")
 
     model = FEModel3D()
+
     pts_sorted = prj.sorted_points()
-
-    has_torsion_load = any(ld.direction == "MX" and abs(ld.value) > 1e-12 for p in prj.points.values() for ld in p.nodal_loads)
-    has_rx_constraint = any(("RX" in p.constraints and p.constraints["RX"].enabled) for p in pts_sorted)
-    torsion_mode = has_torsion_load or has_rx_constraint
-
+    # nodes
     for p in pts_sorted:
         model.add_node(p.name, p.x, 0.0, 0.0)
 
+    # materials/sections
     for mat in prj.materials.values():
         model.add_material(mat.name, E=mat.E, G=mat.G, nu=mat.nu, rho=mat.rho, fy=mat.sigma_y)
     for sec in prj.sections.values():
         model.add_section(sec.name, A=sec.A, Iy=sec.Iy, Iz=sec.Iz, J=sec.J)
 
+    # members (assume already rebuilt names)
     mems_sorted = sorted(prj.members.values(), key=lambda m: (prj.points[m.i_uid].x, prj.points[m.j_uid].x))
     for m in mems_sorted:
-        model.add_member(
-            m.name,
-            i_node=prj.points[m.i_uid].name,
-            j_node=prj.points[m.j_uid].name,
-            material_name=prj.materials[m.material_uid].name,
-            section_name=prj.sections[m.section_uid].name,
-        )
+        i = prj.points[m.i_uid].name
+        j = prj.points[m.j_uid].name
+        mat = prj.materials[m.material_uid].name
+        sec = prj.sections[m.section_uid].name
+        model.add_member(m.name, i_node=i, j_node=j, material_name=mat, section_name=sec)
 
+    # supports and enforced displacements
+    # Use def_support for boolean fixed DOF, and def_node_disp for imposed value
     for p in pts_sorted:
-        dx = p.constraints.get("DX", None) is not None and p.constraints["DX"].enabled
-        dy = p.constraints.get("DY", None) is not None and p.constraints["DY"].enabled
-        rz = p.constraints.get("RZ", None) is not None and p.constraints["RZ"].enabled
-        rx = p.constraints.get("RX", None) is not None and p.constraints["RX"].enabled
-        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=(rx if torsion_mode else True), support_RY=True, support_RZ=rz)
+        dx = ("DX" in p.constraints and p.constraints["DX"].enabled)
+        dy = ("DY" in p.constraints and p.constraints["DY"].enabled)
+        rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
+
+        # lock DZ, RX, RY true to keep 2D? but we can just lock DZ,RX,RY by default for all nodes
+        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=True, support_RY=True, support_RZ=rz)
 
         if dx and abs(p.constraints["DX"].value) > 0:
             model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
@@ -78,124 +71,160 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             model.def_node_disp(p.name, "DY", p.constraints["DY"].value)
         if rz and abs(p.constraints["RZ"].value) > 0:
             model.def_node_disp(p.name, "RZ", p.constraints["RZ"].value)
-        if torsion_mode and rx and abs(p.constraints["RX"].value) > 0:
-            model.def_node_disp(p.name, "RX", p.constraints["RX"].value)
 
+    # load combos
     combo = prj.combos[combo_name]
     model.add_load_combo(combo.name, combo.factors)
 
+    # nodal loads
     for p in prj.points.values():
         for ld in p.nodal_loads:
             model.add_node_load(p.name, ld.direction, ld.value, case=ld.case)
 
+    # member loads (UDL only)
     for m in prj.members.values():
         for ld in m.udl_loads:
+            # distributed load in local y: 'Fy' with w1=w2
             model.add_member_dist_load(m.name, ld.direction, ld.w, ld.w, case=ld.case)
 
+    # analyze
     model.analyze_linear(check_statics=False, check_stability=True)
 
+    # collect nodal DY
     x_nodes = [p.x for p in pts_sorted]
-    dy_nodes = [((model.nodes[p.name] if hasattr(model, "nodes") else model.Nodes[p.name]).DY[combo.name]) for p in pts_sorted]
+    dy_nodes = [( (model.nodes[p.name] if hasattr(model,'nodes') else model.Nodes[p.name]).DY[combo.name]) for p in pts_sorted]
 
+    # reactions at supports
     reactions: Dict[str, Dict[str, float]] = {}
     for p in pts_sorted:
-        node = (model.nodes[p.name] if hasattr(model, "nodes") else model.Nodes[p.name])
+        node = (model.nodes[p.name] if hasattr(model, 'nodes') else model.Nodes[p.name])
         reactions[p.name] = {
             "FX": node.RxnFX.get(combo.name, 0.0),
             "FY": node.RxnFY.get(combo.name, 0.0),
             "MZ": node.RxnMZ.get(combo.name, 0.0),
-            "MX": node.RxnMX.get(combo.name, 0.0),
         }
 
+    # diagrams: build a unified global x list (default 100 divisions + all beam points)
     beam_xs = [p.x for p in pts_sorted]
     x_min = float(min(beam_xs)) if beam_xs else 0.0
     x_max = float(max(beam_xs)) if beam_xs else 0.0
     base_diag_x = np.linspace(x_min, x_max, 101) if x_max > x_min else np.array([x_min], dtype=float)
     x_diag = np.array(_merge_unique_x([*base_diag_x.tolist(), *beam_xs]), dtype=float)
 
-    sigma_y = prj.materials[prj.active_material_uid].sigma_y if prj.active_material_uid in prj.materials else next(iter(prj.materials.values())).sigma_y
+    # Allowable stress
+    # Use active material (if set) else first material
+    if prj.active_material_uid and prj.active_material_uid in prj.materials:
+        sigma_y = prj.materials[prj.active_material_uid].sigma_y
+    else:
+        sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
-        mem = (model.members[m.name] if hasattr(model, "members") else model.Members[m.name])
+        mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
+        # arrays in member local coordinates, then interpolate to unified global x.
         n = max(21, int(n_samples_per_member))
         xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
         _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
-        _, T = _member_array(mem, "torque_array", "Mx", n, combo.name, allow_fail=True)
-        xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name, allow_fail=True)
-        xloc_rz, RZ = _member_array(mem, "rotation_array", "rz", n, combo.name, allow_fail=True)
-        xloc_rx, RX = _member_array(mem, "rotation_array", "rx", n, combo.name, allow_fail=True)
+        has_dy_array = True
+        try:
+            xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name)
+        except PyniteSolverError:
+            has_dy_array = False
+            xloc_dy = xloc
+            DY = np.zeros_like(np.asarray(xloc, dtype=float))
+        has_rz_array = True
+        try:
+            xloc_rz, RZ = _member_array(mem, "rotation_array", "rz", n, combo.name)
+        except PyniteSolverError:
+            has_rz_array = False
+            xloc_rz = xloc
+            RZ = np.zeros_like(np.asarray(xloc, dtype=float))
 
         xloc = np.asarray(xloc, dtype=float)
-        V, M, T = np.asarray(V, dtype=float), np.asarray(M, dtype=float), np.asarray(T, dtype=float)
-        DY, RZ, RX = np.asarray(DY, dtype=float), np.asarray(RZ, dtype=float), np.asarray(RX, dtype=float)
+        xloc_dy = np.asarray(xloc_dy, dtype=float)
+        xloc_rz = np.asarray(xloc_rz, dtype=float)
+        V = np.asarray(V, dtype=float)
+        M = np.asarray(M, dtype=float)
+        DY = np.asarray(DY, dtype=float)
+        RZ = np.asarray(RZ, dtype=float)
 
-        node_i = (model.nodes[mem.i_node.name] if hasattr(model, "nodes") else model.Nodes[mem.i_node.name])
-        node_j = (model.nodes[mem.j_node.name] if hasattr(model, "nodes") else model.Nodes[mem.j_node.name])
-        xi, xj = node_i.X, node_j.X
+        # map to global x
+        node_i = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name])
+        node_j = (model.nodes[mem.j_node.name] if hasattr(model,'nodes') else model.Nodes[mem.j_node.name])
+        xi = node_i.X
+        xj = node_j.X
         L = xj - xi
 
-        xg = xi + _to_mm(xloc, L)
-        xg_dy = xi + _to_mm(np.asarray(xloc_dy, dtype=float), L)
-        xg_rz = xi + _to_mm(np.asarray(xloc_rz, dtype=float), L)
-        xg_rx = xi + _to_mm(np.asarray(xloc_rx, dtype=float), L)
+        if not has_dy_array:
+            dy_i = float(getattr(node_i, "DY", {}).get(combo.name, 0.0))
+            dy_j = float(getattr(node_j, "DY", {}).get(combo.name, 0.0))
+            DY = np.linspace(dy_i, dy_j, max(2, len(np.asarray(xloc_dy, dtype=float))))
+        if not has_rz_array:
+            rz_i = float(getattr(node_i, "RZ", {}).get(combo.name, 0.0))
+            rz_j = float(getattr(node_j, "RZ", {}).get(combo.name, 0.0))
+            RZ = np.linspace(rz_i, rz_j, max(2, len(np.asarray(xloc_rz, dtype=float))))
+        xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
+        x_local_mm = xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
+        xg = xi + x_local_mm
 
-        xg, V, M, T = _sort4(xg, V, M, T)
-        xg_dy, DY = _sort2(xg_dy, DY)
-        xg_rz, RZ = _sort2(xg_rz, RZ)
-        xg_rx, RX = _sort2(xg_rx, RX)
-        DY = _interp_or_const(xg, xg_dy, DY)
-        RZ = _interp_or_const(xg, xg_rz, RZ)
-        RX = _interp_or_const(xg, xg_rx, RX)
+        xmax_dy = float(np.max(np.abs(xloc_dy))) if xloc_dy.size else 0.0
+        x_local_mm_dy = xloc_dy * L if xmax_dy <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_dy
+        xg_dy = xi + x_local_mm_dy
+
+        xmax_rz = float(np.max(np.abs(xloc_rz))) if xloc_rz.size else 0.0
+        x_local_mm_rz = xloc_rz * L if xmax_rz <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rz
+        xg_rz = xi + x_local_mm_rz
+
+        order = np.argsort(xg)
+        xg = xg[order]
+        V = V[order]
+        M = M[order]
+
+        order_dy = np.argsort(xg_dy)
+        xg_dy = xg_dy[order_dy]
+        DY = DY[order_dy]
+
+        order_rz = np.argsort(xg_rz)
+        xg_rz = xg_rz[order_rz]
+        RZ = RZ[order_rz]
+
+        if xg_dy.size >= 2:
+            DY = np.interp(xg, xg_dy, DY)
+        elif xg.size:
+            DY = np.full_like(xg, DY[0] if DY.size else 0.0)
+
+        if xg_rz.size >= 2:
+            RZ = np.interp(xg, xg_rz, RZ)
+        elif xg.size:
+            RZ = np.full_like(xg, RZ[0] if RZ.size else 0.0)
 
         sec = prj.sections[m.section_uid]
-        sigma = M * sec.c_z / max(sec.Iz, 1e-12)
-        tau_v = 1.5 * V / max(sec.A, 1e-12)
-        tau_t = T * sec.c_t / max(sec.J, 1e-12)
-        tau = tau_v + tau_t
-        sigma_eq = np.sqrt(np.maximum(0.0, sigma ** 2 + 3.0 * tau ** 2))
+        # bending stress sigma = M*c/I (Mz uses Iz & c_z)
+        sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
+        margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        Ze = sec.Iz / max(sec.c_z, 1e-12)
-        shape_factor = sec.Zp / max(Ze, 1e-12)
-        sigma_allow_plastic = sigma_allow * max(shape_factor, 1.0)
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, sigma, margin))
 
-        margin = sigma_allow / np.maximum(np.abs(sigma_eq), 1e-9) - 1.0
-        margin_plastic = sigma_allow_plastic / np.maximum(np.abs(sigma_eq), 1e-9) - 1.0
-
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, RX, V, M, T, sigma, tau_v, tau_t, sigma_eq, margin, margin_plastic))
-
-    dy_all = np.zeros_like(x_diag)
-    rz_all = np.zeros_like(x_diag)
-    rx_all = np.zeros_like(x_diag)
-    V_all = np.zeros_like(x_diag)
-    M_all = np.zeros_like(x_diag)
-    T_all = np.zeros_like(x_diag)
-    sigma_all = np.zeros_like(x_diag)
-    tau_v_all = np.zeros_like(x_diag)
-    tau_t_all = np.zeros_like(x_diag)
-    sigma_eq_all = np.zeros_like(x_diag)
-    margin_all = np.zeros_like(x_diag)
-    margin_plastic_all = np.zeros_like(x_diag)
+    dy_all = np.zeros_like(x_diag, dtype=float)
+    rz_all = np.zeros_like(x_diag, dtype=float)
+    V_all = np.zeros_like(x_diag, dtype=float)
+    M_all = np.zeros_like(x_diag, dtype=float)
+    sigma_all = np.zeros_like(x_diag, dtype=float)
+    margin_all = np.zeros_like(x_diag, dtype=float)
 
     for idx, x in enumerate(x_diag):
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, DY, RZ, RX, V, M, T, sigma, tau_v, tau_t, sigma_eq, margin, margin_plastic = mdata
+        _, _, xg, DY, RZ, V, M, sigma, margin = mdata
         dy_all[idx] = np.interp(x, xg, DY)
         rz_all[idx] = np.interp(x, xg, RZ)
-        rx_all[idx] = np.interp(x, xg, RX)
         V_all[idx] = np.interp(x, xg, V)
         M_all[idx] = np.interp(x, xg, M)
-        T_all[idx] = np.interp(x, xg, T)
         sigma_all[idx] = np.interp(x, xg, sigma)
-        tau_v_all[idx] = np.interp(x, xg, tau_v)
-        tau_t_all[idx] = np.interp(x, xg, tau_t)
-        sigma_eq_all[idx] = np.interp(x, xg, sigma_eq)
         margin_all[idx] = np.interp(x, xg, margin)
-        margin_plastic_all[idx] = np.interp(x, xg, margin_plastic)
 
     return SolveOutput(
         combo=combo.name,
@@ -205,42 +234,11 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_diag=np.array(x_diag),
         dy_diag=np.array(dy_all),
         rz_diag=np.array(rz_all),
-        rx_diag=np.array(rx_all),
         V=np.array(V_all),
         M=np.array(M_all),
-        T=np.array(T_all),
         sigma=np.array(sigma_all),
-        tau_v=np.array(tau_v_all),
-        tau_t=np.array(tau_t_all),
-        sigma_eq=np.array(sigma_eq_all),
         margin=np.array(margin_all),
-        margin_plastic=np.array(margin_plastic_all),
     )
-
-
-def _to_mm(xloc: np.ndarray, L: float) -> np.ndarray:
-    xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
-    return xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
-
-
-def _sort2(x: np.ndarray, y: np.ndarray):
-    if x.size == 0:
-        return x, y
-    o = np.argsort(x)
-    return x[o], y[o]
-
-
-def _sort4(x: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray):
-    if x.size == 0:
-        return x, a, b, c
-    o = np.argsort(x)
-    return x[o], a[o], b[o], c[o]
-
-
-def _interp_or_const(x_ref: np.ndarray, x: np.ndarray, y: np.ndarray):
-    if x.size >= 2:
-        return np.interp(x_ref, x, y)
-    return np.full_like(x_ref, y[0] if y.size else 0.0)
 
 
 def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
@@ -254,18 +252,21 @@ def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
     return merged
 
 
-def _pick_member_curve(member_curves, x: float, eps: float = 1e-9):
+def _pick_member_curve(
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    x: float,
+    eps: float = 1e-9,
+):
     for m in member_curves:
-        if m[0] - eps <= x <= m[1] + eps:
+        x0, x1 = m[0], m[1]
+        if x0 - eps <= x <= x1 + eps:
             return m
     return member_curves[-1] if member_curves else None
 
 
-def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str, allow_fail: bool = False):
+def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str):
     method = getattr(mem, method_name, None)
     if method is None:
-        if allow_fail:
-            return np.array([0.0, 1.0]), np.zeros(2)
         raise PyniteSolverError(f"PyNite member 缺少方法: {method_name}")
 
     attempts = [
@@ -281,6 +282,4 @@ def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str
             return f()
         except Exception as e:
             last_error = e
-    if allow_fail:
-        return np.array([0.0, 1.0]), np.zeros(2)
     raise PyniteSolverError(f"无法读取 member {method_name}({direction}) 结果: {last_error}")
