@@ -11,14 +11,14 @@ def _uid() -> str:
 @dataclass
 class Constraint:
     # DOF in PyNite naming: DX, DY, RZ
-    dof: Literal["DX", "DY", "RZ"]
+    dof: Literal["DX", "DY", "RZ", "RX"]
     value: float = 0.0
     enabled: bool = True
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming: FY, MZ (Phase-1)
-    direction: Literal["FY", "MZ"]
+    # direction in PyNite naming: FY, MZ, MX
+    direction: Literal["FY", "MZ", "MX"]
     value: float
     case: str = "LC1"
 
@@ -58,6 +58,8 @@ class Section:
     Iz: float = 1.0
     J: float = 1.0
     c_z: float = 1.0  # max distance for bending about z (Mz -> stress uses c_z with Iz)
+    c_t: float = 1.0  # max radius to estimate torsional shear tau_t = T*c_t/J
+    Zp: float = 1.0   # plastic section modulus for Mz bending
 
     # Wizard parameters (for sketch/preview). Units: mm.
     p1: float = 0.0

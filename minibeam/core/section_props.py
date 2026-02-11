@@ -9,6 +9,16 @@ class SectionProps:
     Iz: float
     J: float
     c_z: float
+    c_t: float
+    Zp: float
+
+    @property
+    def Ze(self) -> float:
+        return self.Iz / max(self.c_z, 1e-12)
+
+    @property
+    def shape_factor(self) -> float:
+        return self.Zp / max(self.Ze, 1e-12)
 
 def rect_solid(b: float, h: float) -> SectionProps:
     # b along z, h along y (for a beam along x; bending about z uses Iz with y distances)
@@ -22,7 +32,9 @@ def rect_solid(b: float, h: float) -> SectionProps:
     beta = c/a
     J = a*c**3*(1/3 - 0.21*beta*(1 - beta**4/12))
     c_z = h/2.0  # for Mz bending in XY plane, stress uses distance in Y, so use h/2
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = 0.5 * math.hypot(b, h)
+    Zp = max(b * h**2 / 4.0, Iz / max(c_z, 1e-12))
+    return SectionProps(A, Iy, Iz, J, c_z, c_t, Zp)
 
 def circle_solid(d: float) -> SectionProps:
     r = d/2.0
@@ -30,7 +42,9 @@ def circle_solid(d: float) -> SectionProps:
     I = math.pi*r**4/4.0
     J = math.pi*r**4/2.0
     c_z = r
-    return SectionProps(A, I, I, J, c_z)
+    c_t = r
+    Zp = max(4.0 * r**3 / 3.0, I / max(c_z, 1e-12))
+    return SectionProps(A, I, I, J, c_z, c_t, Zp)
 
 def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # Very simplified I-beam about z (bending in XY): use Iz for strong axis with depth h
@@ -52,7 +66,10 @@ def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # torsion J: very rough thin-wall approx
     J = 2*(bf*tf**3/3.0) + (h-2*tf)*tw**3/3.0
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = 0.5 * math.hypot(bf, h)
+    # Approximation: plastic modulus as web + flanges split by PNA at depth center
+    Zp = max(bf * tf * (h - tf) + tw * (h - 2 * tf) ** 2 / 4.0, Iz / max(c_z, 1e-12))
+    return SectionProps(A, Iy, Iz, J, c_z, c_t, Zp)
 
 
 def rect_hollow(b: float, h: float, t: float) -> SectionProps:
@@ -81,7 +98,10 @@ def rect_hollow(b: float, h: float, t: float) -> SectionProps:
     J = 4*(Am**2) / (2*(bm/t) + 2*(hm/t))
 
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = 0.5 * math.hypot(b, h)
+    # Approximation by subtracting inner solid section plastic modulus
+    Zp = max(b * h**2 / 4.0 - bi * hi**2 / 4.0, Iz / max(c_z, 1e-12))
+    return SectionProps(A, Iy, Iz, J, c_z, c_t, Zp)
 
 def circle_hollow(D: float, t: float) -> SectionProps:
     """Hollow circular tube (outer diameter D, wall thickness t)."""
@@ -96,4 +116,6 @@ def circle_hollow(D: float, t: float) -> SectionProps:
     I = math.pi*(R**4 - r**4)/4.0
     J = math.pi*(R**4 - r**4)/2.0
     c_z = R
-    return SectionProps(A, I, I, J, c_z)
+    c_t = R
+    Zp = max(4.0 * (R**3 - r**3) / 3.0, I / max(c_z, 1e-12))
+    return SectionProps(A, I, I, J, c_z, c_t, Zp)

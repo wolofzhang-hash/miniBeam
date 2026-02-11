@@ -96,6 +96,14 @@ class ResultsView(QWidget):
             ax.set_ylabel("θz (rad)")
             ax.set_title("Rotation θ (RZ)")
 
+        elif rtype == "Torsion RX":
+            xr, yr = _clip(out.x_diag, out.rx_diag)
+            ax.plot(_norm(xr), yr)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("θx (rad)")
+            ax.set_title("Torsion Rotation (RX)")
+
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
             ax.plot(_norm(xv), yv)
@@ -112,6 +120,14 @@ class ResultsView(QWidget):
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
 
+        elif rtype == "Torque T":
+            xt, yt = _clip(out.x_diag, out.T)
+            ax.plot(_norm(xt), yt)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("T (N·mm)")
+            ax.set_title("Torque T (Mx)")
+
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
@@ -119,6 +135,22 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("sigma (N/mm²)")
             ax.set_title("Bending Stress sigma = M*c/I")
+
+        elif rtype == "Torsional τt":
+            xs, ys = _clip(out.x_diag, out.tau_t)
+            ax.plot(_norm(xs), ys)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("tau_t (N/mm²)")
+            ax.set_title("Torsional Shear τt = T*c_t/J")
+
+        elif rtype == "Combined σeq":
+            xs, ys = _clip(out.x_diag, out.sigma_eq)
+            ax.plot(_norm(xs), ys)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("σeq (N/mm²)")
+            ax.set_title("Combined Stress (von Mises)")
 
         elif rtype == "Margin MS":
             xm2, ym2 = _clip(out.x_diag, out.margin)
@@ -130,6 +162,17 @@ class ResultsView(QWidget):
             ax.set_title("Margin of Safety (allow/|sigma|-1)")
             idx = int(np.argmin(out.margin))
             ax.annotate(f"min {out.margin[idx]:.3f}", (out.x_diag[idx] - x0, out.margin[idx]))
+
+        elif rtype == "Plastic Margin MS":
+            xm2, ym2 = _clip(out.x_diag, out.margin_plastic)
+            ax.plot(_norm(xm2), ym2)
+            _draw_zero_line()
+            ax.set_ylim(-1, 3)
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("MS_plastic")
+            ax.set_title("Plastic Corrected MS (using Zp/Ze)")
+            idx = int(np.argmin(out.margin_plastic))
+            ax.annotate(f"min {out.margin_plastic[idx]:.3f}", (out.x_diag[idx] - x0, out.margin_plastic[idx]))
 
         self.fig.tight_layout()
         
