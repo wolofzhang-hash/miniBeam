@@ -36,10 +36,6 @@ class PyniteSolverError(RuntimeError):
     pass
 
 
-_XLOC_EPS = 1e-9
-_DOMAIN_COVERAGE_RATIO = 0.9
-
-
 def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int = 20) -> SolveOutput:
     if FEModel3D is None:
         raise PyniteSolverError("未安装 PyNiteFEA/Pynite。请先 `pip install PyNiteFEA`。")
@@ -50,8 +46,6 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     has_torsion_load = any(ld.direction == "MX" and abs(ld.value) > 1e-12 for p in prj.points.values() for ld in p.nodal_loads)
     has_rx_constraint = any(("RX" in p.constraints and p.constraints["RX"].enabled) for p in pts_sorted)
     torsion_mode = has_torsion_load or has_rx_constraint
-
-    length_scale_to_mm = _length_scale_to_mm(prj.units)
 
     for p in pts_sorted:
         model.add_node(p.name, p.x, 0.0, 0.0)
@@ -100,7 +94,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
 
     model.analyze_linear(check_statics=False, check_stability=True)
 
-    x_nodes = [p.x * length_scale_to_mm for p in pts_sorted]
+    x_nodes = [p.x for p in pts_sorted]
     dy_nodes = [((model.nodes[p.name] if hasattr(model, "nodes") else model.Nodes[p.name]).DY[combo.name]) for p in pts_sorted]
 
     reactions: Dict[str, Dict[str, float]] = {}
@@ -113,7 +107,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             "MX": node.RxnMX.get(combo.name, 0.0),
         }
 
-    beam_xs = [p.x * length_scale_to_mm for p in pts_sorted]
+    beam_xs = [p.x for p in pts_sorted]
     x_min = float(min(beam_xs)) if beam_xs else 0.0
     x_max = float(max(beam_xs)) if beam_xs else 0.0
     base_diag_x = np.linspace(x_min, x_max, 101) if x_max > x_min else np.array([x_min], dtype=float)
@@ -140,21 +134,21 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
 
         node_i = (model.nodes[mem.i_node.name] if hasattr(model, "nodes") else model.Nodes[mem.i_node.name])
         node_j = (model.nodes[mem.j_node.name] if hasattr(model, "nodes") else model.Nodes[mem.j_node.name])
-        xi, xj = node_i.X * length_scale_to_mm, node_j.X * length_scale_to_mm
+        xi, xj = node_i.X, node_j.X
         L = xj - xi
 
-        xg = xi + _to_local_x(xloc, L=L, member_name=m.name, quantity="shear/moment/torque", scale_to_mm=length_scale_to_mm)
-        xg_dy = xi + _to_local_x(np.asarray(xloc_dy, dtype=float), L=L, member_name=m.name, quantity="deflection", scale_to_mm=length_scale_to_mm)
-        xg_rz = xi + _to_local_x(np.asarray(xloc_rz, dtype=float), L=L, member_name=m.name, quantity="rotation_rz", scale_to_mm=length_scale_to_mm)
-        xg_rx = xi + _to_local_x(np.asarray(xloc_rx, dtype=float), L=L, member_name=m.name, quantity="rotation_rx", scale_to_mm=length_scale_to_mm)
+        xg = xi + _to_mm(xloc, L)
+        xg_dy = xi + _to_mm(np.asarray(xloc_dy, dtype=float), L)
+        xg_rz = xi + _to_mm(np.asarray(xloc_rz, dtype=float), L)
+        xg_rx = xi + _to_mm(np.asarray(xloc_rx, dtype=float), L)
 
         xg, V, M, T = _sort4(xg, V, M, T)
         xg_dy, DY = _sort2(xg_dy, DY)
         xg_rz, RZ = _sort2(xg_rz, RZ)
         xg_rx, RX = _sort2(xg_rx, RX)
-        DY = _interp_or_const(xg, xg_dy, DY, member_name=m.name, quantity="deflection", expected_span=abs(L))
-        RZ = _interp_or_const(xg, xg_rz, RZ, member_name=m.name, quantity="rotation_rz", expected_span=abs(L))
-        RX = _interp_or_const(xg, xg_rx, RX, member_name=m.name, quantity="rotation_rx", expected_span=abs(L))
+        DY = _interp_or_const(xg, xg_dy, DY)
+        RZ = _interp_or_const(xg, xg_rz, RZ)
+        RX = _interp_or_const(xg, xg_rx, RX)
 
         sec = prj.sections[m.section_uid]
         sigma = M * sec.c_z / max(sec.Iz, 1e-12)
@@ -224,90 +218,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     )
 
 
-def _length_scale_to_mm(units: str) -> float:
-    token = (units or "").split("-")[0].strip().lower()
-    if token == "mm":
-        return 1.0
-    if token == "m":
-        return 1000.0
-    return 1.0
-
-
-def _to_local_x(
-    xloc: np.ndarray,
-    L: float,
-    member_name: str,
-    quantity: str,
-    scale_to_mm: float,
-    eps: float = _XLOC_EPS,
-) -> np.ndarray:
-    xloc = np.asarray(xloc, dtype=float).reshape(-1)
-    if xloc.size == 0:
-        return xloc
-
-    raw = xloc * scale_to_mm
-    normalized = xloc * L
-
-    span_target = abs(float(L))
-    span_raw = _span(raw)
-    span_normalized = _span(normalized)
-    near_norm_range = float(np.min(xloc)) >= -eps and float(np.max(xloc)) <= 1.0 + eps
-
-    if span_target <= eps:
-        chosen = raw
-    elif near_norm_range:
-        chosen = normalized
-        if abs(span_raw - span_target) < abs(span_normalized - span_target):
-            chosen = raw
-    else:
-        chosen = normalized if abs(span_normalized - span_target) <= abs(span_raw - span_target) else raw
-
-    _validate_x_domain(
-        xg=chosen,
-        expected_span=span_target,
-        member_name=member_name,
-        quantity=quantity,
-        xloc=xloc,
-        cand_a=raw,
-        cand_b=normalized,
-        eps=eps,
-    )
-    return chosen
-
-
-def _span(x: np.ndarray) -> float:
-    if x.size == 0:
-        return 0.0
-    return float(np.max(x) - np.min(x))
-
-
-def _validate_x_domain(
-    xg: np.ndarray,
-    expected_span: float,
-    member_name: str,
-    quantity: str,
-    xloc: np.ndarray,
-    cand_a: np.ndarray,
-    cand_b: np.ndarray,
-    eps: float = _XLOC_EPS,
-):
-    if xg.size < 2 or expected_span <= eps:
-        return
-
-    xg_min = float(np.min(xg))
-    xg_max = float(np.max(xg))
-    xg_span = xg_max - xg_min
-    if xg_max >= (_DOMAIN_COVERAGE_RATIO * expected_span) and xg_span >= (_DOMAIN_COVERAGE_RATIO * expected_span):
-        return
-
-    raise PyniteSolverError(
-        "x 坐标体系不匹配，可能导致插值被边界夹持而产生常数曲线: "
-        f"member={member_name}, quantity={quantity}, L={expected_span:.6g}, "
-        f"xloc[min,max]=({float(np.min(xloc)):.6g}, {float(np.max(xloc)):.6g}), "
-        f"cand_a[min,max]=({float(np.min(cand_a)):.6g}, {float(np.max(cand_a)):.6g}), "
-        f"cand_b[min,max]=({float(np.min(cand_b)):.6g}, {float(np.max(cand_b)):.6g}), "
-        f"selected[min,max]=({xg_min:.6g}, {xg_max:.6g})"
-    )
+def _to_mm(xloc: np.ndarray, L: float) -> np.ndarray:
+    xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
+    return xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
 
 
 def _sort2(x: np.ndarray, y: np.ndarray):
@@ -332,23 +245,7 @@ def _sort4(x: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray):
     return x[o], a[o], b[o], c[o]
 
 
-def _interp_or_const(
-    x_ref: np.ndarray,
-    x: np.ndarray,
-    y: np.ndarray,
-    member_name: str,
-    quantity: str,
-    expected_span: float,
-):
-    _validate_x_domain(
-        xg=x,
-        expected_span=expected_span,
-        member_name=member_name,
-        quantity=quantity,
-        xloc=x,
-        cand_a=x,
-        cand_b=x,
-    )
+def _interp_or_const(x_ref: np.ndarray, x: np.ndarray, y: np.ndarray):
     if x.size >= 2:
         return np.interp(x_ref, x, y)
     return np.full_like(x_ref, y[0] if y.size else 0.0)
