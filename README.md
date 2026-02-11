@@ -24,3 +24,26 @@ python run.py
 
 ## Notes
 - Model coordinates are in **mm** by default. Forces in **N**, moments in **N·mm**, distributed loads in **N/mm**.
+
+## Export aligned member CSV (same x for every quantity)
+```python
+from minibeam.core.export_results import export_member_aligned_csv
+
+# model: a solved PyNite FEModel3D instance
+rows = export_member_aligned_csv(
+    model=model,
+    member_name="M1",
+    csv_path="out/M1_aligned.csv",
+    n_div=100,
+    combo_name="Combo 1",  # optional, default is Combo 1
+    shear_dir="Fy",
+    moment_dir="Mz",
+    disp_dirs=("UY",),
+    rot_dirs=("RZ",),
+)
+
+# quick checks: aligned, monotonic, include endpoints
+assert rows[0]["x_local"] == 0.0
+assert rows[-1]["x_local"] > 0.0
+assert all(rows[i]["x_local"] <= rows[i + 1]["x_local"] for i in range(len(rows) - 1))
+```
