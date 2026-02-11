@@ -10,8 +10,8 @@ A small 1D beam FEM GUI tool (Ribbon-like UI + right-click modeling) using **PyN
 - Loads: nodal Fy, nodal Mz, member UDL (w in Y).
 - Solve (linear) using Pynite; results:
   - FBD (loads + reactions)
-  - Deflection (DY at nodes, scaled)
-  - Shear V (Fy) / Moment M (Mz) diagrams (member arrays)
+  - Deflection (DY along beam, sampled on unified diagram x, scaled)
+  - Rotation θ (RZ) / Shear V (Fy) / Moment M (Mz) diagrams (member arrays)
   - Stress (sigma_bend from M*c/I) and Margin (sigma_y/FS / |sigma| - 1)
 
 ## Install

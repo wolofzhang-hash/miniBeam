@@ -18,6 +18,8 @@ class SolveOutput:
     reactions: Dict[str, Dict[str, float]]  # point_name -> {FY, MZ, FX}
     # diagrams (global x coordinate arrays)
     x_diag: np.ndarray
+    dy_diag: np.ndarray
+    rz_diag: np.ndarray
     V: np.ndarray
     M: np.ndarray
     # stress/margin sampled on same x_diag
@@ -117,44 +119,96 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
         # arrays in member local coordinates, then interpolate to unified global x.
         n = max(21, int(n_samples_per_member))
+        xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
+        _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
+        has_dy_array = True
         try:
-            xloc, V = mem.shear_array("Fy", n, combo_name=combo.name)
-            _, M = mem.moment_array("Mz", n, combo_name=combo.name)
-        except TypeError:
-            # older PyNite versions
-            xloc, V = mem.shear_array("Fy", n)
-            _, M = mem.moment_array("Mz", n)
+            xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name)
+        except PyniteSolverError:
+            has_dy_array = False
+            xloc_dy = xloc
+            DY = np.zeros_like(np.asarray(xloc, dtype=float))
+        has_rz_array = True
+        try:
+            xloc_rz, RZ = _member_array(mem, "rotation_array", "rz", n, combo.name)
+        except PyniteSolverError:
+            has_rz_array = False
+            xloc_rz = xloc
+            RZ = np.zeros_like(np.asarray(xloc, dtype=float))
 
         xloc = np.asarray(xloc, dtype=float)
+        xloc_dy = np.asarray(xloc_dy, dtype=float)
+        xloc_rz = np.asarray(xloc_rz, dtype=float)
         V = np.asarray(V, dtype=float)
         M = np.asarray(M, dtype=float)
+        DY = np.asarray(DY, dtype=float)
+        RZ = np.asarray(RZ, dtype=float)
 
         # map to global x
-        xi = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name]).X
-        xj = (model.nodes[mem.j_node.name] if hasattr(model,'nodes') else model.Nodes[mem.j_node.name]).X
+        node_i = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name])
+        node_j = (model.nodes[mem.j_node.name] if hasattr(model,'nodes') else model.Nodes[mem.j_node.name])
+        xi = node_i.X
+        xj = node_j.X
         L = xj - xi
+
+        if not has_dy_array:
+            dy_i = float(getattr(node_i, "DY", {}).get(combo.name, 0.0))
+            dy_j = float(getattr(node_j, "DY", {}).get(combo.name, 0.0))
+            DY = np.linspace(dy_i, dy_j, max(2, len(np.asarray(xloc_dy, dtype=float))))
+        if not has_rz_array:
+            rz_i = float(getattr(node_i, "RZ", {}).get(combo.name, 0.0))
+            rz_j = float(getattr(node_j, "RZ", {}).get(combo.name, 0.0))
+            RZ = np.linspace(rz_i, rz_j, max(2, len(np.asarray(xloc_rz, dtype=float))))
         xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
         x_local_mm = xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
         xg = xi + x_local_mm
+
+        xmax_dy = float(np.max(np.abs(xloc_dy))) if xloc_dy.size else 0.0
+        x_local_mm_dy = xloc_dy * L if xmax_dy <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_dy
+        xg_dy = xi + x_local_mm_dy
+
+        xmax_rz = float(np.max(np.abs(xloc_rz))) if xloc_rz.size else 0.0
+        x_local_mm_rz = xloc_rz * L if xmax_rz <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rz
+        xg_rz = xi + x_local_mm_rz
 
         order = np.argsort(xg)
         xg = xg[order]
         V = V[order]
         M = M[order]
 
+        order_dy = np.argsort(xg_dy)
+        xg_dy = xg_dy[order_dy]
+        DY = DY[order_dy]
+
+        order_rz = np.argsort(xg_rz)
+        xg_rz = xg_rz[order_rz]
+        RZ = RZ[order_rz]
+
+        if xg_dy.size >= 2:
+            DY = np.interp(xg, xg_dy, DY)
+        elif xg.size:
+            DY = np.full_like(xg, DY[0] if DY.size else 0.0)
+
+        if xg_rz.size >= 2:
+            RZ = np.interp(xg, xg_rz, RZ)
+        elif xg.size:
+            RZ = np.full_like(xg, RZ[0] if RZ.size else 0.0)
+
         sec = prj.sections[m.section_uid]
         # bending stress sigma = M*c/I (Mz uses Iz & c_z)
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
         margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, V, M, sigma, margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, sigma, margin))
 
+    dy_all = np.zeros_like(x_diag, dtype=float)
+    rz_all = np.zeros_like(x_diag, dtype=float)
     V_all = np.zeros_like(x_diag, dtype=float)
     M_all = np.zeros_like(x_diag, dtype=float)
     sigma_all = np.zeros_like(x_diag, dtype=float)
@@ -164,7 +218,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, V, M, sigma, margin = mdata
+        _, _, xg, DY, RZ, V, M, sigma, margin = mdata
+        dy_all[idx] = np.interp(x, xg, DY)
+        rz_all[idx] = np.interp(x, xg, RZ)
         V_all[idx] = np.interp(x, xg, V)
         M_all[idx] = np.interp(x, xg, M)
         sigma_all[idx] = np.interp(x, xg, sigma)
@@ -176,6 +232,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         dy_nodes=dy_nodes,
         reactions=reactions,
         x_diag=np.array(x_diag),
+        dy_diag=np.array(dy_all),
+        rz_diag=np.array(rz_all),
         V=np.array(V_all),
         M=np.array(M_all),
         sigma=np.array(sigma_all),
@@ -195,7 +253,7 @@ def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
 
 
 def _pick_member_curve(
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     x: float,
     eps: float = 1e-9,
 ):
@@ -204,3 +262,24 @@ def _pick_member_curve(
         if x0 - eps <= x <= x1 + eps:
             return m
     return member_curves[-1] if member_curves else None
+
+
+def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str):
+    method = getattr(mem, method_name, None)
+    if method is None:
+        raise PyniteSolverError(f"PyNite member 缺少方法: {method_name}")
+
+    attempts = [
+        lambda: method(direction, n, combo_name=combo_name),
+        lambda: method(direction, n),
+        lambda: method(direction=direction, n_points=n, combo_name=combo_name),
+        lambda: method(direction=direction, n_points=n),
+        lambda: method(direction, n_points=n, combo_name=combo_name),
+    ]
+    last_error = None
+    for f in attempts:
+        try:
+            return f()
+        except Exception as e:
+            last_error = e
+    raise PyniteSolverError(f"无法读取 member {method_name}({direction}) 结果: {last_error}")
