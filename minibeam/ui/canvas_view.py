@@ -127,7 +127,7 @@ class BeamCanvas(QGraphicsView):
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)
 
-        # Ensure the view/viewport can receive keyboard events (Delete/Backspace).
+        # Keep focus behavior predictable for interactive tools.
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.viewport().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
@@ -567,7 +567,7 @@ class BeamCanvas(QGraphicsView):
     # events
     def mousePressEvent(self, event):
         self.begin_interaction()
-        # Keep keyboard focus on canvas after clicking so delete hotkeys work.
+        # Keep keyboard focus on canvas after clicking.
         self.setFocus(Qt.FocusReason.MouseFocusReason)
 
         # Right-button pan
@@ -784,12 +784,3 @@ class BeamCanvas(QGraphicsView):
             # delete actions per the user's workflow.
 
         menu.exec(event.globalPos())
-
-    def keyPressEvent(self, event):
-        # Make point deletion robust when focus is on the canvas viewport.
-        # Some environments/laptop keyboards send Backspace rather than Delete.
-        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.request_delete_selected_points.emit()
-            event.accept()
-            return
-        super().keyPressEvent(event)

@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QInputDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QIcon, QPixmap
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 from PyQt6.QtWidgets import QStyle, QFileDialog
 
 import sys
@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
         self.act_save = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Save", self)
 
         self.act_select = QAction(self._std_icon("SP_ArrowCursor", "SP_ArrowForward"), "Select", self)
-        self.act_add_point = QAction(self._std_icon("SP_FileDialogNewFolder", "SP_DirIcon"), "Add Point (F4)", self)
+        self.act_add_point = QAction(self._std_icon("SP_FileDialogNewFolder", "SP_DirIcon"), "Add Point", self)
         self.act_auto_members = QAction(self._std_icon("SP_BrowserReload", "SP_BrowserStop"), "Auto Members", self)
         self.act_delete = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCloseButton"), "Delete", self)
 
@@ -142,8 +142,6 @@ class MainWindow(QMainWindow):
         self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Export CSV", self)
 
         # Shortcuts
-        self.act_add_point.setShortcut(QKeySequence("F4"))
-        self.act_delete.setShortcut(QKeySequence(Qt.Key.Key_Delete))
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
         self.act_open.setShortcut(QKeySequence.StandardKey.Open)
         self.act_new.setShortcut(QKeySequence.StandardKey.New)
@@ -350,20 +348,12 @@ class MainWindow(QMainWindow):
         self.canvas.request_edit_nodal_loads.connect(self.edit_nodal_loads_selected)
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
 
-        # Delete key (redundant to QAction shortcut; keeps behaviour even if focus is on canvas)
-        self.shortcut_delete = QShortcut(QKeySequence(Qt.Key.Key_Delete), self)
-        self.shortcut_delete.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        self.shortcut_delete.activated.connect(self.delete_selected_points)
-        self.shortcut_backspace = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self)
-        self.shortcut_backspace.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        self.shortcut_backspace.activated.connect(self.delete_selected_points)
-
 
     def set_model_mode(self, mode: str):
         """Set active canvas mode.
 
         Phase-1 supports 'select' and 'add_point'. We also remember the last
-        modeling mode so F4 can repeat it (Planar Sketch style).
+        modeling mode for repeated modeling actions (Planar Sketch style).
         """
         self.canvas.set_mode(mode)
         if mode != "select":
@@ -398,7 +388,7 @@ class MainWindow(QMainWindow):
         self._schedule_refresh()
 
     def repeat_last_model_action(self):
-        # Phase-1: F4 switches to continuous Add Point
+        # Phase-1: switches to continuous Add Point
         self.set_model_mode(self._last_model_mode)
 
     # ---------------- Model actions ----------------
