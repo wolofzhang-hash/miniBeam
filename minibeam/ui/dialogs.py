@@ -211,15 +211,21 @@ class MaterialManagerDialog(QDialog):
             else:
                 w.valueChanged.connect(self.update_selected)
 
+        self._loading_selection = False
         self.refresh()
 
-    def refresh(self):
+    def refresh(self, selected_uid: str | None = None):
+        if selected_uid is None:
+            selected_uid = self._current_uid()
         self.list.clear()
+        selected_row = -1
         for mat in self.prj.materials.values():
             star = " ★" if mat.uid == self.prj.active_material_uid else ""
             self.list.addItem(f"{mat.name}{star} [{mat.uid}]")
+            if mat.uid == selected_uid:
+                selected_row = self.list.count() - 1
         if self.list.count() > 0:
-            self.list.setCurrentRow(0)
+            self.list.setCurrentRow(selected_row if selected_row >= 0 else 0)
 
     def _current_uid(self):
         row = self.list.currentRow()
@@ -234,13 +240,17 @@ class MaterialManagerDialog(QDialog):
         if not uid or uid not in self.prj.materials:
             return
         m = self.prj.materials[uid]
+        self._loading_selection = True
         self.ed_name.setText(m.name)
         self.ed_E.setValue(m.E)
         self.ed_G.setValue(m.G)
         self.ed_nu.setValue(m.nu)
         self.ed_fy.setValue(m.sigma_y)
+        self._loading_selection = False
 
     def update_selected(self, *_):
+        if self._loading_selection:
+            return
         uid = self._current_uid()
         if not uid or uid not in self.prj.materials:
             return
@@ -250,7 +260,7 @@ class MaterialManagerDialog(QDialog):
         m.G = float(self.ed_G.value())
         m.nu = float(self.ed_nu.value())
         m.sigma_y = float(self.ed_fy.value())
-        self.refresh()
+        self.refresh(selected_uid=uid)
 
     def add_material(self):
         m = Material(name="Material", E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
@@ -272,7 +282,7 @@ class MaterialManagerDialog(QDialog):
         if not uid:
             return
         self.prj.active_material_uid = uid
-        self.refresh()
+        self.refresh(selected_uid=uid)
 
     def save_library(self):
         try:
@@ -365,6 +375,7 @@ class SectionManagerDialog(QDialog):
             sp.valueChanged.connect(self._update_preview)
         self.cmb_type.currentTextChanged.connect(lambda _: self._update_preview())
 
+        self._loading_selection = False
         self._update_hint(self.cmb_type.currentText())
         self.refresh()
 
@@ -424,13 +435,18 @@ class SectionManagerDialog(QDialog):
             self.ed_name.setText("I200")
             self.sp1.setValue(200.0); self.sp2.setValue(100.0); self.sp3.setValue(10.0); self.sp4.setValue(6.0)
 
-    def refresh(self):
+    def refresh(self, selected_uid: str | None = None):
+        if selected_uid is None:
+            selected_uid = self._current_uid()
         self.list.clear()
+        selected_row = -1
         for sec in self.prj.sections.values():
             star = " ★" if sec.uid == self.prj.active_section_uid else ""
             self.list.addItem(f"{sec.name} ({sec.type}){star} [{sec.uid}]")
+            if sec.uid == selected_uid:
+                selected_row = self.list.count() - 1
         if self.list.count() > 0:
-            self.list.setCurrentRow(0)
+            self.list.setCurrentRow(selected_row if selected_row >= 0 else 0)
 
     def _current_uid(self):
         row = self.list.currentRow()
@@ -445,8 +461,10 @@ class SectionManagerDialog(QDialog):
         if not uid or uid not in self.prj.sections:
             return
         s = self.prj.sections[uid]
+        self._loading_selection = True
         self.cmb_type.setCurrentText(s.type)
         self.ed_name.setText(s.name)
+        self._loading_selection = False
 
     def add_or_update(self):
         typ = self.cmb_type.currentText()
@@ -488,7 +506,7 @@ class SectionManagerDialog(QDialog):
                 p4=float(self.sp4.value()),
             )
             self.prj.sections[s.uid] = s
-        self.refresh()
+        self.refresh(selected_uid=s.uid)
 
     def save_library(self):
         try:
@@ -512,4 +530,4 @@ class SectionManagerDialog(QDialog):
         if not uid:
             return
         self.prj.active_section_uid = uid
-        self.refresh()
+        self.refresh(selected_uid=uid)
