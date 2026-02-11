@@ -124,11 +124,12 @@ class ResultsView(QWidget):
             xm2, ym2 = _clip(out.x_diag, out.margin)
             ax.plot(_norm(xm2), ym2)
             _draw_zero_line()
+            ax.set_ylim(-1, 2)
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("MS")
             ax.set_title("Margin of Safety (allow/|sigma|-1)")
             idx = int(np.argmin(out.margin))
-            ax.annotate(f"min {out.margin[idx]:.3f}", (out.x_diag[idx], out.margin[idx]))
+            ax.annotate(f"min {out.margin[idx]:.3f}", (out.x_diag[idx] - x0, out.margin[idx]))
 
         self.fig.tight_layout()
         
