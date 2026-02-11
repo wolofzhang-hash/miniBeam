@@ -759,9 +759,11 @@ class MainWindow(QMainWindow):
 
                 # Unified table header (avoid duplicated header blocks)
                 w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
+
+                node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
                     r = out.reactions.get(p.name, {}) if getattr(out, "reactions", None) else {}
-                    w.writerow([
+                    node_rows.append([
                         "NODE",
                         p.name,
                         "",
@@ -776,21 +778,38 @@ class MainWindow(QMainWindow):
                         "",
                     ])
 
-                for i in range(len(x)):
-                    w.writerow([
-                        "DIAG",
-                        "",
-                        out.combo,
-                        f"{x[i]:.6f}",
-                        f"{dy[i]:.9g}",
-                        "",
-                        "",
-                        "",
-                        f"{V[i]:.9g}" if i < len(V) else "",
-                        f"{M[i]:.9g}" if i < len(M) else "",
-                        f"{sigma[i]:.9g}" if i < len(sigma) else "",
-                        f"{margin[i]:.9g}" if i < len(margin) else "",
-                    ])
+                if len(x) == 0:
+                    for row in node_rows:
+                        w.writerow(row)
+                else:
+                    diag_rows = []
+                    for i in range(len(x)):
+                        diag_rows.append([
+                            "DIAG",
+                            "",
+                            out.combo,
+                            f"{x[i]:.6f}",
+                            f"{dy[i]:.9g}",
+                            "",
+                            "",
+                            "",
+                            f"{V[i]:.9g}" if i < len(V) else "",
+                            f"{M[i]:.9g}" if i < len(M) else "",
+                            f"{sigma[i]:.9g}" if i < len(sigma) else "",
+                            f"{margin[i]:.9g}" if i < len(margin) else "",
+                        ])
+
+                    x_vals = np.asarray(x, dtype=float)
+                    for row in node_rows:
+                        x_node = float(row[3])
+                        idx = int(np.argmin(np.abs(x_vals - x_node))) if x_vals.size else -1
+                        if idx >= 0 and abs(float(x_vals[idx]) - x_node) <= 1e-6:
+                            diag_rows[idx] = row
+                        else:
+                            diag_rows.append(row)
+
+                    for row in sorted(diag_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
+                        w.writerow(row)
         except Exception as e:
             QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
             return
