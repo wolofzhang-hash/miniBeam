@@ -9,6 +9,7 @@ class SectionProps:
     Iz: float
     J: float
     c_z: float
+    c_t: float
 
 def rect_solid(b: float, h: float) -> SectionProps:
     # b along z, h along y (for a beam along x; bending about z uses Iz with y distances)
@@ -22,7 +23,8 @@ def rect_solid(b: float, h: float) -> SectionProps:
     beta = c/a
     J = a*c**3*(1/3 - 0.21*beta*(1 - beta**4/12))
     c_z = h/2.0  # for Mz bending in XY plane, stress uses distance in Y, so use h/2
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = 0.5 * min(b, h)
+    return SectionProps(A, Iy, Iz, J, c_z, c_t)
 
 def circle_solid(d: float) -> SectionProps:
     r = d/2.0
@@ -30,7 +32,8 @@ def circle_solid(d: float) -> SectionProps:
     I = math.pi*r**4/4.0
     J = math.pi*r**4/2.0
     c_z = r
-    return SectionProps(A, I, I, J, c_z)
+    c_t = r
+    return SectionProps(A, I, I, J, c_z, c_t)
 
 def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # Very simplified I-beam about z (bending in XY): use Iz for strong axis with depth h
@@ -52,7 +55,8 @@ def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # torsion J: very rough thin-wall approx
     J = 2*(bf*tf**3/3.0) + (h-2*tf)*tw**3/3.0
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = h / 2.0
+    return SectionProps(A, Iy, Iz, J, c_z, c_t)
 
 
 def rect_hollow(b: float, h: float, t: float) -> SectionProps:
@@ -81,7 +85,8 @@ def rect_hollow(b: float, h: float, t: float) -> SectionProps:
     J = 4*(Am**2) / (2*(bm/t) + 2*(hm/t))
 
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    c_t = 0.5 * min(b, h)
+    return SectionProps(A, Iy, Iz, J, c_z, c_t)
 
 def circle_hollow(D: float, t: float) -> SectionProps:
     """Hollow circular tube (outer diameter D, wall thickness t)."""
@@ -96,4 +101,5 @@ def circle_hollow(D: float, t: float) -> SectionProps:
     I = math.pi*(R**4 - r**4)/4.0
     J = math.pi*(R**4 - r**4)/2.0
     c_z = R
-    return SectionProps(A, I, I, J, c_z)
+    c_t = R
+    return SectionProps(A, I, I, J, c_z, c_t)

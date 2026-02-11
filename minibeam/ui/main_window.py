@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self.project.active_material_uid = mat.uid
 
         sp = rect_solid(100.0, 10.0)
-        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_z=sp.c_z)
+        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_z=sp.c_z, c_t=sp.c_t)
         self.project.sections[sec.uid] = sec
         self.project.active_section_uid = sec.uid
 
@@ -232,7 +232,11 @@ class MainWindow(QMainWindow):
             "FBD",
             "Shear V",
             "Moment M",
+            "Torsion T",
             "Stress σ",
+            "Torsional Stress τ",
+            "Von Mises σvm",
+            "Twist θx",
             "Margin MS",
         ])
         self.cmb_result_type.setMinimumWidth(160)
@@ -744,15 +748,20 @@ class MainWindow(QMainWindow):
             x = xg - x0
             V = np.asarray(getattr(out, "V", []), dtype=float)[mask]
             M = np.asarray(getattr(out, "M", []), dtype=float)[mask]
+            T = np.asarray(getattr(out, "T", np.zeros_like(xg)), dtype=float)[mask]
             sigma = np.asarray(getattr(out, "sigma", []), dtype=float)[mask]
+            tau = np.asarray(getattr(out, "tau", np.zeros_like(xg)), dtype=float)[mask]
+            sigma_vm = np.asarray(getattr(out, "sigma_vm", np.zeros_like(xg)), dtype=float)[mask]
             margin = np.asarray(getattr(out, "margin", []), dtype=float)[mask]
             dy = np.asarray(getattr(out, "dy_diag", np.zeros_like(xg)), dtype=float)[mask]
             rz = np.asarray(getattr(out, "rz_diag", np.zeros_like(xg)), dtype=float)[mask]
+            rx = np.asarray(getattr(out, "rx_diag", np.zeros_like(xg)), dtype=float)[mask]
         else:
             x = np.array([], dtype=float)
             dy = np.array([], dtype=float)
             rz = np.array([], dtype=float)
-            V = M = sigma = margin = np.array([], dtype=float)
+            V = M = T = sigma = tau = sigma_vm = margin = np.array([], dtype=float)
+            rx = np.array([], dtype=float)
 
         import csv
         try:
@@ -760,7 +769,7 @@ class MainWindow(QMainWindow):
                 w = csv.writer(f)
 
                 # Unified table header (avoid duplicated header blocks)
-                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "rx_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "Rxn_MX_Nmm", "V_N", "M_Nmm", "T_Nmm", "sigma_Nmm2", "tau_Nmm2", "sigma_vm_Nmm2", "MS"])
 
                 node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
@@ -772,9 +781,14 @@ class MainWindow(QMainWindow):
                         f"{x_nodes[i-1]:.6f}",
                         f"{dy_nodes[i-1]:.9g}",
                         "",
+                        "",
                         f"{float(r.get('FX', 0.0)):.9g}",
                         f"{float(r.get('FY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
+                        f"{float(r.get('MX', 0.0)):.9g}",
+                        "",
+                        "",
+                        "",
                         "",
                         "",
                         "",
@@ -794,12 +808,17 @@ class MainWindow(QMainWindow):
                             f"{x[i]:.6f}",
                             f"{dy[i]:.9g}",
                             f"{rz[i]:.9g}" if i < len(rz) else "",
+                            f"{rx[i]:.9g}" if i < len(rx) else "",
+                            "",
                             "",
                             "",
                             "",
                             f"{V[i]:.9g}" if i < len(V) else "",
                             f"{M[i]:.9g}" if i < len(M) else "",
+                            f"{T[i]:.9g}" if i < len(T) else "",
                             f"{sigma[i]:.9g}" if i < len(sigma) else "",
+                            f"{tau[i]:.9g}" if i < len(tau) else "",
+                            f"{sigma_vm[i]:.9g}" if i < len(sigma_vm) else "",
                             f"{margin[i]:.9g}" if i < len(margin) else "",
                         ])
 
@@ -816,9 +835,10 @@ class MainWindow(QMainWindow):
                             merged_row[2] = row[2]
                             merged_row[3] = row[3]
                             merged_row[4] = row[4]
-                            merged_row[6] = row[6]
                             merged_row[7] = row[7]
                             merged_row[8] = row[8]
+                            merged_row[9] = row[9]
+                            merged_row[10] = row[10]
                             diag_rows[idx] = merged_row
                         else:
                             diag_rows.append(row)
@@ -1062,7 +1082,7 @@ class MainWindow(QMainWindow):
         self._schedule_refresh()
 
     def edit_nodal_loads_selected(self):
-        """Open a dialog to edit FY and MZ nodal loads for selected point(s) in active load case.
+        """Open a dialog to edit FY/MZ/MX nodal loads for selected point(s) in active load case.
         Loads are unique per (direction, loadcase) and will be overwritten (no duplicates)."""
         pids = self.canvas.selected_point_uids()
         if not pids:
@@ -1071,7 +1091,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Load (FY, MZ)")
+        dlg.setWindowTitle("Load (FY, MZ, MX)")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1096,15 +1116,19 @@ class MainWindow(QMainWindow):
 
         fy_en, fy_val = (False, 0.0)
         mz_en, mz_val = (False, 0.0)
+        mx_en, mx_val = (False, 0.0)
         if p0:
             for ld in p0.nodal_loads:
                 if ld.case == lc and ld.direction == "FY":
                     fy_en, fy_val = (True, ld.value)
                 if ld.case == lc and ld.direction == "MZ":
                     mz_en, mz_val = (True, ld.value)
+                if ld.case == lc and ld.direction == "MX":
+                    mx_en, mx_val = (True, ld.value)
 
         cb_fy, sb_fy = mk_row("FY (N)", fy_en, fy_val)
         cb_mz, sb_mz = mk_row("MZ (N·mm)", mz_en, mz_val)
+        cb_mx, sb_mx = mk_row("MX (N·mm, torsion)", mx_en, mx_val)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1121,12 +1145,14 @@ class MainWindow(QMainWindow):
                 continue
 
             # remove existing for this LC
-            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FY", "MZ")]
+            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FY", "MZ", "MX")]
 
             if cb_fy.isChecked():
                 p.nodal_loads.append(NodalLoad(direction="FY", value=float(sb_fy.value()), case=lc))
             if cb_mz.isChecked():
                 p.nodal_loads.append(NodalLoad(direction="MZ", value=float(sb_mz.value()), case=lc))
+            if cb_mx.isChecked():
+                p.nodal_loads.append(NodalLoad(direction="MX", value=float(sb_mx.value()), case=lc))
 
         after = self.project.to_dict()
         self._push_snapshot("Edit loads", before, after)
