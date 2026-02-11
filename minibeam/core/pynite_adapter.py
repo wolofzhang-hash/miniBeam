@@ -276,17 +276,28 @@ def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str
             return np.array([0.0, 1.0]), np.zeros(2)
         raise PyniteSolverError(f"PyNite member 缺少方法: {method_name}")
 
+    # PyNite APIs differ by version: some accept n_points, some x_array, and
+    # some older signatures use positional args. Keep broad compatibility, but
+    # reject suspiciously under-sampled outputs and continue trying.
+    x_samples = np.linspace(0.0, 1.0, max(int(n), 2))
     attempts = [
-        lambda: method(direction, n, combo_name=combo_name),
-        lambda: method(direction, n),
         lambda: method(direction=direction, n_points=n, combo_name=combo_name),
         lambda: method(direction=direction, n_points=n),
         lambda: method(direction, n_points=n, combo_name=combo_name),
+        lambda: method(direction=direction, x_array=x_samples, combo_name=combo_name),
+        lambda: method(direction=direction, x_array=x_samples),
+        lambda: method(direction, x_samples, combo_name=combo_name),
+        lambda: method(direction, x_samples),
+        lambda: method(direction, n, combo_name=combo_name),
+        lambda: method(direction, n),
     ]
     last_error = None
     for f in attempts:
         try:
-            return _normalize_member_result(f())
+            x, y = _normalize_member_result(f())
+            if _looks_undersampled(x, y, n):
+                raise ValueError(f"undersampled curve ({x.size} points)")
+            return x, y
         except Exception as e:
             last_error = e
     if allow_fail:
@@ -294,16 +305,31 @@ def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str
     raise PyniteSolverError(f"无法读取 member {method_name}({direction}) 结果: {last_error}")
 
 
+def _looks_undersampled(x: np.ndarray, y: np.ndarray, n: int) -> bool:
+    # Member diagram arrays should usually have several points. If only 1-2
+    # points are returned while we requested many, treat it as a signature
+    # mismatch and continue trying other API variants.
+    if n <= 3:
+        return False
+    return x.size != y.size or x.size < min(5, n)
+
+
 def _normalize_member_result(result):
     """Normalize PyNite member array output into (x, y) 1D arrays.
 
     PyNite APIs vary by version and may return:
-    - tuple/list: (x, y)
+    - tuple: (x, y)
     - array shaped (2, N)
     - array shaped (N, 2)
-    This helper converts all these variants into matching 1D arrays.
+
+    Notes
+    -----
+    We intentionally treat *tuple* ``(x, y)`` specially, but not generic lists.
+    A plain list may also represent sampled pairs ``[(x1, y1), (x2, y2), ...]``;
+    when there are only two points, blindly reading list[0]/list[1] as x/y would
+    swap semantics and corrupt the curve.
     """
-    if isinstance(result, (tuple, list)) and len(result) == 2:
+    if isinstance(result, tuple) and len(result) == 2:
         x = np.asarray(result[0], dtype=float).reshape(-1)
         y = np.asarray(result[1], dtype=float).reshape(-1)
         if x.size == y.size:
@@ -311,9 +337,10 @@ def _normalize_member_result(result):
 
     arr = np.asarray(result, dtype=float)
     if arr.ndim == 2:
-        if arr.shape[0] == 2:
-            return arr[0].reshape(-1), arr[1].reshape(-1)
+        # Prefer (N, 2) first to correctly handle list-of-pairs, including N=2.
         if arr.shape[1] == 2:
             return arr[:, 0].reshape(-1), arr[:, 1].reshape(-1)
+        if arr.shape[0] == 2:
+            return arr[0].reshape(-1), arr[1].reshape(-1)
 
     raise ValueError(f"Unexpected member result shape: {arr.shape}")
