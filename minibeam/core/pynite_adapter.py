@@ -1,21 +1,22 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
-from .model import Project
+from .model import Project, Section
 
 try:
     from Pynite import FEModel3D
 except Exception:  # pragma: no cover
     FEModel3D = None
 
+
 @dataclass
 class SolveOutput:
     combo: str
     x_nodes: List[float]
     dy_nodes: List[float]
-    reactions: Dict[str, Dict[str, float]]  # point_name -> {FX, FY, MZ, MX}
+    reactions: Dict[str, Dict[str, float]]  # point_name -> {FX, FY, FZ, MX, MY, MZ}
     # diagrams (global x coordinate arrays)
     x_diag: np.ndarray
     dy_diag: np.ndarray
@@ -30,19 +31,22 @@ class SolveOutput:
     sigma_vm: np.ndarray
     margin: np.ndarray
 
+
 class PyniteSolverError(RuntimeError):
     pass
+
 
 def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int = 20) -> SolveOutput:
     if FEModel3D is None:
         raise PyniteSolverError("未安装 PyNiteFEA/Pynite。请先 `pip install PyNiteFEA`。")
 
     model = FEModel3D()
+    is_3d = getattr(prj, "mode", "2D") == "3D"
 
     pts_sorted = prj.sorted_points()
     # nodes
     for p in pts_sorted:
-        model.add_node(p.name, p.x, 0.0, 0.0)
+        model.add_node(p.name, float(p.x), float(getattr(p, "y", 0.0)), float(getattr(p, "z", 0.0)))
 
     # materials/sections
     for mat in prj.materials.values():
@@ -60,22 +64,36 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         model.add_member(m.name, i_node=i, j_node=j, material_name=mat, section_name=sec)
 
     # supports and enforced displacements
-    # Use def_support for boolean fixed DOF, and def_node_disp for imposed value
+    # 2D mode adds system planar constraints; 3D mode only uses user constraints.
     for p in pts_sorted:
-        dx = ("DX" in p.constraints and p.constraints["DX"].enabled)
-        dy = ("DY" in p.constraints and p.constraints["DY"].enabled)
-        rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
+        constraints = p.constraints
+        dx = ("DX" in constraints and constraints["DX"].enabled)
+        dy = ("DY" in constraints and constraints["DY"].enabled)
+        dz = ("DZ" in constraints and constraints["DZ"].enabled)
+        rx = ("RX" in constraints and constraints["RX"].enabled)
+        ry = ("RY" in constraints and constraints["RY"].enabled)
+        rz = ("RZ" in constraints and constraints["RZ"].enabled)
 
-        # Lock DZ/RY to keep the model planar in XY, but keep RX free so torsional
-        # DOF is available when users apply nodal MX loads.
-        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=False, support_RY=True, support_RZ=rz)
+        if not is_3d:
+            # Keep legacy planar-beam behavior.
+            dz = True
+            rx = True
+            ry = True
 
-        if dx and abs(p.constraints["DX"].value) > 0:
-            model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
-        if dy and abs(p.constraints["DY"].value) > 0:
-            model.def_node_disp(p.name, "DY", p.constraints["DY"].value)
-        if rz and abs(p.constraints["RZ"].value) > 0:
-            model.def_node_disp(p.name, "RZ", p.constraints["RZ"].value)
+        model.def_support(
+            p.name,
+            support_DX=dx,
+            support_DY=dy,
+            support_DZ=dz,
+            support_RX=rx,
+            support_RY=ry,
+            support_RZ=rz,
+        )
+
+        for dof in ("DX", "DY", "DZ", "RX", "RY", "RZ"):
+            c = constraints.get(dof)
+            if c is not None and c.enabled and abs(float(c.value)) > 0:
+                model.def_node_disp(p.name, dof, float(c.value))
 
     # load combos
     combo = prj.combos[combo_name]
@@ -97,17 +115,19 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
 
     # collect nodal DY
     x_nodes = [p.x for p in pts_sorted]
-    dy_nodes = [( (model.nodes[p.name] if hasattr(model,'nodes') else model.Nodes[p.name]).DY[combo.name]) for p in pts_sorted]
+    dy_nodes = [((model.nodes[p.name] if hasattr(model, "nodes") else model.Nodes[p.name]).DY[combo.name]) for p in pts_sorted]
 
     # reactions at supports
     reactions: Dict[str, Dict[str, float]] = {}
     for p in pts_sorted:
-        node = (model.nodes[p.name] if hasattr(model, 'nodes') else model.Nodes[p.name])
+        node = (model.nodes[p.name] if hasattr(model, "nodes") else model.Nodes[p.name])
         reactions[p.name] = {
-            "FX": node.RxnFX.get(combo.name, 0.0),
-            "FY": node.RxnFY.get(combo.name, 0.0),
-            "MZ": node.RxnMZ.get(combo.name, 0.0),
+            "FX": getattr(node, "RxnFX", {}).get(combo.name, 0.0),
+            "FY": getattr(node, "RxnFY", {}).get(combo.name, 0.0),
+            "FZ": getattr(node, "RxnFZ", {}).get(combo.name, 0.0),
             "MX": getattr(node, "RxnMX", {}).get(combo.name, 0.0),
+            "MY": getattr(node, "RxnMY", {}).get(combo.name, 0.0),
+            "MZ": getattr(node, "RxnMZ", {}).get(combo.name, 0.0),
         }
 
     # diagrams: build a unified global x list (default 100 divisions + all beam points)
@@ -118,25 +138,21 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     x_diag = np.array(_merge_unique_x([*base_diag_x.tolist(), *beam_xs]), dtype=float)
 
     # Allowable stress
-    # Use active material (if set) else first material
     if prj.active_material_uid and prj.active_material_uid in prj.materials:
         sigma_y = prj.materials[prj.active_material_uid].sigma_y
     else:
         sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
-        mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
-        # arrays in member local coordinates, then interpolate to unified global x.
+        mem = (model.members[m.name] if hasattr(model, "members") else model.Members[m.name])
         n = max(21, int(n_samples_per_member))
         xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
         _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
-        try:
-            _, T = _member_array(mem, "moment_array", "Mx", n, combo.name)
-        except PyniteSolverError:
-            T = np.zeros_like(np.asarray(xloc, dtype=float))
+        xloc_t, T = _member_torsion_array(mem, n=n, combo_name=combo.name, allow_zero_fallback=not is_3d)
+
         has_dy_array = True
         try:
             xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name)
@@ -162,6 +178,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         xloc = np.asarray(xloc, dtype=float)
         xloc_dy = np.asarray(xloc_dy, dtype=float)
         xloc_rz = np.asarray(xloc_rz, dtype=float)
+        xloc_t = np.asarray(xloc_t, dtype=float)
         V = np.asarray(V, dtype=float)
         M = np.asarray(M, dtype=float)
         T = np.asarray(T, dtype=float)
@@ -170,9 +187,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         xloc_rx = np.asarray(xloc_rx, dtype=float)
         RX = np.asarray(RX, dtype=float)
 
-        # map to global x
-        node_i = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name])
-        node_j = (model.nodes[mem.j_node.name] if hasattr(model,'nodes') else model.Nodes[mem.j_node.name])
+        node_i = (model.nodes[mem.i_node.name] if hasattr(model, "nodes") else model.Nodes[mem.i_node.name])
+        node_j = (model.nodes[mem.j_node.name] if hasattr(model, "nodes") else model.Nodes[mem.j_node.name])
         xi = node_i.X
         xj = node_j.X
         L = xj - xi
@@ -185,27 +201,21 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             rz_i = float(getattr(node_i, "RZ", {}).get(combo.name, 0.0))
             rz_j = float(getattr(node_j, "RZ", {}).get(combo.name, 0.0))
             RZ = np.linspace(rz_i, rz_j, max(2, len(np.asarray(xloc_rz, dtype=float))))
-        xmax = float(np.max(np.abs(xloc))) if xloc.size else 0.0
-        x_local_mm = xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
-        xg = xi + x_local_mm
 
-        xmax_dy = float(np.max(np.abs(xloc_dy))) if xloc_dy.size else 0.0
-        x_local_mm_dy = xloc_dy * L if xmax_dy <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_dy
-        xg_dy = xi + x_local_mm_dy
-
-        xmax_rz = float(np.max(np.abs(xloc_rz))) if xloc_rz.size else 0.0
-        x_local_mm_rz = xloc_rz * L if xmax_rz <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rz
-        xg_rz = xi + x_local_mm_rz
-
-        xmax_rx = float(np.max(np.abs(xloc_rx))) if xloc_rx.size else 0.0
-        x_local_mm_rx = xloc_rx * L if xmax_rx <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rx
-        xg_rx = xi + x_local_mm_rx
+        xg = xi + _as_local_mm(xloc, L)
+        xg_t = xi + _as_local_mm(xloc_t, L)
+        xg_dy = xi + _as_local_mm(xloc_dy, L)
+        xg_rz = xi + _as_local_mm(xloc_rz, L)
+        xg_rx = xi + _as_local_mm(xloc_rx, L)
 
         order = np.argsort(xg)
         xg = xg[order]
         V = V[order]
         M = M[order]
-        T = T[order]
+
+        order_t = np.argsort(xg_t)
+        xg_t = xg_t[order_t]
+        T = T[order_t]
 
         order_dy = np.argsort(xg_dy)
         xg_dy = xg_dy[order_dy]
@@ -218,6 +228,11 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         order_rx = np.argsort(xg_rx)
         xg_rx = xg_rx[order_rx]
         RX = RX[order_rx]
+
+        if xg_t.size >= 2:
+            T = np.interp(xg, xg_t, T)
+        elif xg.size:
+            T = np.full_like(xg, T[0] if T.size else 0.0)
 
         if xg_dy.size >= 2:
             DY = np.interp(xg, xg_dy, DY)
@@ -234,10 +249,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         elif xg.size:
             RX = np.full_like(xg, RX[0] if RX.size else 0.0)
 
-        sec = prj.sections[m.section_uid]
-        # bending stress sigma = M*c/I (Mz uses Iz & c_z)
+        sec: Section = prj.sections[m.section_uid]
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
-        tau = np.array(T) * sec.c_t / max(sec.J, 1e-12)
+        r_max = _section_torsion_radius(sec)
+        tau = np.array(T) * r_max / max(sec.J, 1e-12)
         sigma_vm = np.sqrt(np.square(sigma) + 3.0 * np.square(tau))
         margin = sigma_allow / np.maximum(np.abs(sigma_vm), 1e-9) - 1.0
 
@@ -287,6 +302,131 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_vm=np.array(sigma_vm_all),
         margin=np.array(margin_all),
     )
+
+
+def _as_local_mm(x_local: np.ndarray, member_len: float) -> np.ndarray:
+    xmax = float(np.max(np.abs(x_local))) if x_local.size else 0.0
+    if xmax <= 1.0 + 1e-9 and abs(member_len) > 1.0 + 1e-9:
+        return x_local * member_len
+    return x_local
+
+
+def _section_torsion_radius(sec: Section) -> float:
+    """Return equivalent max radius for tau = T*r/J.
+
+    Fallback order:
+    1) existing c_t if valid;
+    2) round section estimate r=sqrt(A/pi);
+    3) conservative generic estimate from area.
+    TODO: replace by exact y_max/z_max per detailed section geometry.
+    """
+    if float(getattr(sec, "c_t", 0.0)) > 1e-12:
+        return float(sec.c_t)
+    if sec.type.lower().startswith("circle"):
+        return float(np.sqrt(max(sec.A, 1e-12) / np.pi))
+    return float(np.sqrt(max(sec.A, 1e-12))) / 2.0
+
+
+def _member_torsion_array(mem: Any, n: int, combo_name: str, allow_zero_fallback: bool) -> Tuple[np.ndarray, np.ndarray]:
+    """Read member torsion using API probing; never silently returns zeros in 3D mode."""
+    array_specs: Sequence[Tuple[str, Optional[str]]] = (
+        ("torque_array", None),
+        ("torsion_array", None),
+        ("moment_array", "Mx"),
+    )
+    for method_name, direction in array_specs:
+        method = getattr(mem, method_name, None)
+        if method is None:
+            continue
+        try:
+            return _invoke_array_method(method, n=n, combo_name=combo_name, direction=direction)
+        except Exception:
+            continue
+
+    point_specs: Sequence[Tuple[str, Optional[str]]] = (
+        ("torque", None),
+        ("torsion", None),
+        ("moment", "Mx"),
+    )
+    x = np.linspace(0.0, 1.0, int(max(2, n)))
+    for method_name, direction in point_specs:
+        method = getattr(mem, method_name, None)
+        if method is None:
+            continue
+        try:
+            vals = np.asarray([_invoke_point_method(method, xi, combo_name=combo_name, direction=direction) for xi in x], dtype=float)
+            return x, vals
+        except Exception:
+            continue
+
+    if allow_zero_fallback:
+        x = np.linspace(0.0, 1.0, int(max(2, n)))
+        return x, np.zeros_like(x)
+
+    raise PyniteSolverError(
+        "无法读取 member 扭转结果接口。"
+        f"候选方法: {_candidate_member_methods(mem, ('tor', 'tors', 'mx', 'moment'))}"
+    )
+
+
+def _invoke_array_method(method: Callable[..., Any], n: int, combo_name: str, direction: Optional[str]) -> Tuple[np.ndarray, np.ndarray]:
+    attempts: List[Callable[[], Any]] = [
+        lambda: method(n_points=n, combo_name=combo_name, direction=direction),
+        lambda: method(n_points=n, combo_name=combo_name),
+        lambda: method(n_points=n, direction=direction),
+        lambda: method(n_points=n),
+    ]
+    if direction is not None:
+        attempts.extend([
+            lambda: method(direction, n, combo_name=combo_name),
+            lambda: method(direction, n),
+        ])
+    attempts.extend([
+        lambda: method(n, combo_name),
+        lambda: method(n),
+    ])
+
+    last_error: Optional[Exception] = None
+    for fn in attempts:
+        try:
+            out = fn()
+            if isinstance(out, tuple) and len(out) == 2:
+                return np.asarray(out[0], dtype=float), np.asarray(out[1], dtype=float)
+        except Exception as e:
+            last_error = e
+    raise PyniteSolverError(f"无法调用数组扭转接口: {last_error}")
+
+
+def _invoke_point_method(method: Callable[..., Any], x: float, combo_name: str, direction: Optional[str]) -> float:
+    attempts: List[Callable[[], Any]] = [
+        lambda: method(x=x, combo_name=combo_name, direction=direction),
+        lambda: method(x=x, combo_name=combo_name),
+        lambda: method(x=x, direction=direction),
+        lambda: method(x=x),
+    ]
+    if direction is not None:
+        attempts.extend([
+            lambda: method(direction=direction, x=x, combo_name=combo_name),
+            lambda: method(direction, x, combo_name),
+            lambda: method(direction, x),
+        ])
+    attempts.extend([
+        lambda: method(x, combo_name),
+        lambda: method(x),
+    ])
+
+    last_error: Optional[Exception] = None
+    for fn in attempts:
+        try:
+            return float(fn())
+        except Exception as e:
+            last_error = e
+    raise PyniteSolverError(f"无法调用单点扭转接口: {last_error}")
+
+
+def _candidate_member_methods(mem: Any, keys: Sequence[str]) -> str:
+    names = sorted(name for name in dir(mem) if any(k in name.lower() for k in keys))
+    return ", ".join(names) if names else "<none>"
 
 
 def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
