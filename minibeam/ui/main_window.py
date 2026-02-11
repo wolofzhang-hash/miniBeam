@@ -22,7 +22,12 @@ from .canvas_view import BeamCanvas
 from .dialogs import MaterialManagerDialog, SectionManagerDialog
 from .results_view import ResultsView
 from ..core.undo import UndoStack
-from ..core.library_store import load_material_library, load_section_library, merge_by_name
+from ..core.library_store import (
+    load_builtin_material_library,
+    load_material_library,
+    load_section_library,
+    merge_by_name,
+)
 
 
 class MainWindow(QMainWindow):
@@ -68,7 +73,7 @@ class MainWindow(QMainWindow):
         self.undo_stack = UndoStack()
         self._last_model_mode: str = "add_point"  # Phase-1: only point modeling
         # seed one material & one section
-        mat = Material(name="Steel", E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
+        mat = Material(name="steel", E=206000.0, G=79300.0, nu=0.3, rho=7.85e-6, sigma_y=235.0)
         self.project.materials[mat.uid] = mat
         self.project.active_material_uid = mat.uid
 
@@ -80,10 +85,17 @@ class MainWindow(QMainWindow):
         # Load user libraries (materials/sections) and merge by name.
         # This lets you build a reusable library across projects.
         try:
+            merge_by_name(self.project.materials, load_builtin_material_library(), name_attr="name")
             merge_by_name(self.project.materials, load_material_library(), name_attr="name")
             merge_by_name(self.project.sections, load_section_library(), name_attr="name")
         except Exception:
             pass
+
+        # Keep default active material as steel when available.
+        for m in self.project.materials.values():
+            if m.name.strip().lower() == "steel":
+                self.project.active_material_uid = m.uid
+                break
 
         self._build_ui()
         self._connect()

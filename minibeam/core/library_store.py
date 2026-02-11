@@ -17,6 +17,10 @@ def _lib_dir() -> Path:
     return d
 
 
+def _builtin_data_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "data"
+
+
 def _read_json(path: Path) -> dict:
     if not path.exists():
         return {}
@@ -32,6 +36,8 @@ def _write_json(path: Path, obj: dict) -> None:
 
 def load_material_library() -> List[Material]:
     path = _lib_dir() / "materials.json"
+    if not path.exists():
+        seed_default_material_library(path)
     data = _read_json(path)
     out: List[Material] = []
     for md in data.get("materials", []):
@@ -43,6 +49,29 @@ def load_material_library() -> List[Material]:
         except Exception:
             continue
     return out
+
+
+def load_builtin_material_library() -> List[Material]:
+    path = _builtin_data_dir() / "materials_mm_n_mpa.json"
+    data = _read_json(path)
+    out: List[Material] = []
+    for md in data.get("materials", []):
+        try:
+            md = dict(md)
+            md.pop("uid", None)
+            out.append(Material(**md))
+        except Exception:
+            continue
+    return out
+
+
+def seed_default_material_library(target_path: Path | None = None) -> None:
+    """Create ~/.minibeam/materials.json from built-in defaults if missing."""
+    path = target_path or (_lib_dir() / "materials.json")
+    if path.exists():
+        return
+    payload = {"materials": [asdict(m) for m in load_builtin_material_library()]}
+    _write_json(path, payload)
 
 
 def save_material_library(materials: Dict[str, Material]) -> None:

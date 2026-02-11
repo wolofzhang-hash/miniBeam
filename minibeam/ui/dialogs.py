@@ -3,8 +3,8 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QFormLayout, QLineEdit,
     QDoubleSpinBox, QLabel, QMessageBox, QComboBox, QGroupBox
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QPen, QBrush
+from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygonF
 
 from ..core.model import Project, Material, Section
 from ..core.section_props import rect_solid, circle_solid, i_section, rect_hollow, circle_hollow
@@ -20,6 +20,37 @@ class SectionPreview(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._typ = "RectSolid"
         self._p = (100.0, 10.0, 0.0, 0.0)
+
+    def _draw_dimension(self, qp: QPainter, x1: float, y1: float, x2: float, y2: float, text: str):
+        """Draw simple dimension line with arrow heads and centered label."""
+        qp.setPen(QPen(Qt.GlobalColor.darkGray, 1))
+        qp.drawLine(int(x1), int(y1), int(x2), int(y2))
+
+        dx = x2 - x1
+        dy = y2 - y1
+        ln = max((dx * dx + dy * dy) ** 0.5, 1e-6)
+        ux, uy = dx / ln, dy / ln
+        px, py = -uy, ux
+        ah = 8.0
+        aw = 4.0
+
+        head1 = QPolygonF([
+            QPointF(x1, y1),
+            QPointF(x1 + ux * ah + px * aw, y1 + uy * ah + py * aw),
+            QPointF(x1 + ux * ah - px * aw, y1 + uy * ah - py * aw),
+        ])
+        head2 = QPolygonF([
+            QPointF(x2, y2),
+            QPointF(x2 - ux * ah + px * aw, y2 - uy * ah + py * aw),
+            QPointF(x2 - ux * ah - px * aw, y2 - uy * ah - py * aw),
+        ])
+        qp.setBrush(QBrush(Qt.GlobalColor.darkGray))
+        qp.drawPolygon(head1)
+        qp.drawPolygon(head2)
+
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        qp.setPen(QPen(Qt.GlobalColor.black, 1))
+        qp.drawText(int(mx + px * 12 - 20), int(my + py * 12 + 4), text)
 
     def set_section(self, typ: str, p1: float, p2: float, p3: float, p4: float):
         self._typ = typ
@@ -49,7 +80,10 @@ class SectionPreview(QLabel):
             s = box / max(b, hh, 1e-6)
             bw = b * s
             bh = hh * s
-            qp.drawRect(int(cx - bw / 2), int(cy - bh / 2), int(bw), int(bh))
+            x0, y0 = cx - bw / 2, cy - bh / 2
+            qp.drawRect(int(x0), int(y0), int(bw), int(bh))
+            self._draw_dimension(qp, x0, y0 - 14, x0 + bw, y0 - 14, f"b={b:g}")
+            self._draw_dimension(qp, x0 - 14, y0, x0 - 14, y0 + bh, f"h={hh:g}")
 
         if self._typ == "RectSolid":
             draw_rect(p1, p2)
@@ -65,11 +99,16 @@ class SectionPreview(QLabel):
                 hi = (hh - 2*t) * s
                 qp.setBrush(QBrush(Qt.GlobalColor.white))
                 qp.drawRect(int(cx - bi / 2), int(cy - hi / 2), int(bi), int(hi))
+            x0, y0 = cx - bw / 2, cy - bh / 2
+            self._draw_dimension(qp, x0, y0 - 14, x0 + bw, y0 - 14, f"b={b:g}")
+            self._draw_dimension(qp, x0 - 14, y0, x0 - 14, y0 + bh, f"h={hh:g}")
+            self._draw_dimension(qp, x0 + bw + 12, y0, x0 + bw + 12, y0 + t * s, f"t={t:g}")
         elif self._typ == "CircleSolid":
             d = max(p1, 1e-6)
             s = box / d
             rr = d * s / 2
             qp.drawEllipse(int(cx - rr), int(cy - rr), int(2 * rr), int(2 * rr))
+            self._draw_dimension(qp, cx - rr, cy - rr - 14, cx + rr, cy - rr - 14, f"d={d:g}")
         elif self._typ == "CircleHollow":
             D = float(p1)
             t = float(p2)
@@ -81,6 +120,8 @@ class SectionPreview(QLabel):
                 r = (D/2 - t) * s
                 qp.setBrush(QBrush(Qt.GlobalColor.white))
                 qp.drawEllipse(int(cx - r), int(cy - r), int(2 * r), int(2 * r))
+            self._draw_dimension(qp, cx - R, cy - R - 14, cx + R, cy - R - 14, f"D={D:g}")
+            self._draw_dimension(qp, cx + R + 12, cy - R, cx + R + 12, cy - R + t * s, f"t={t:g}")
         else:
             # I section: h, bf, tf, tw
             h0, bf, tf, tw = p1, p2, p3, p4
@@ -95,6 +136,11 @@ class SectionPreview(QLabel):
             qp.drawRect(int(cx - B / 2), int(cy + H / 2 - TF), int(B), int(TF))
             # web
             qp.drawRect(int(cx - TW / 2), int(cy - H / 2 + TF), int(TW), int(H - 2 * TF))
+            x0, y0 = cx - B / 2, cy - H / 2
+            self._draw_dimension(qp, x0, y0 - 14, x0 + B, y0 - 14, f"bf={bf:g}")
+            self._draw_dimension(qp, x0 - 14, y0, x0 - 14, y0 + H, f"h={h0:g}")
+            self._draw_dimension(qp, x0 + B + 12, y0, x0 + B + 12, y0 + TF, f"tf={tf:g}")
+            self._draw_dimension(qp, cx - TW / 2, y0 + H + 14, cx + TW / 2, y0 + H + 14, f"tw={tw:g}")
 
         qp.end()
 
@@ -253,7 +299,7 @@ class SectionManagerDialog(QDialog):
         # wizard
         gb = QGroupBox("Section Wizard (Phase-1)")
         right.addWidget(gb)
-        form = QFormLayout(gb)
+        self.form = QFormLayout(gb)
 
         self.cmb_type = QComboBox()
         self.cmb_type.addItems(["RectSolid", "RectHollow", "CircleSolid", "CircleHollow", "ISection"])
@@ -263,13 +309,21 @@ class SectionManagerDialog(QDialog):
         self.sp2 = QDoubleSpinBox(); self.sp2.setRange(0.001, 1e9); self.sp2.setDecimals(3)
         self.sp3 = QDoubleSpinBox(); self.sp3.setRange(0.001, 1e9); self.sp3.setDecimals(3)
         self.sp4 = QDoubleSpinBox(); self.sp4.setRange(0.001, 1e9); self.sp4.setDecimals(3)
+        self.sp5 = QDoubleSpinBox(); self.sp5.setRange(0.001, 1e9); self.sp5.setDecimals(3)
 
-        form.addRow("Type", self.cmb_type)
-        form.addRow("Name", self.ed_name)
-        form.addRow("Param1", self.sp1)
-        form.addRow("Param2", self.sp2)
-        form.addRow("Param3", self.sp3)
-        form.addRow("Param4", self.sp4)
+        self.lbl_p1 = QLabel("Param1")
+        self.lbl_p2 = QLabel("Param2")
+        self.lbl_p3 = QLabel("Param3")
+        self.lbl_p4 = QLabel("Param4")
+        self.lbl_p5 = QLabel("Param5")
+
+        self.form.addRow("Type", self.cmb_type)
+        self.form.addRow("Name", self.ed_name)
+        self.form.addRow(self.lbl_p1, self.sp1)
+        self.form.addRow(self.lbl_p2, self.sp2)
+        self.form.addRow(self.lbl_p3, self.sp3)
+        self.form.addRow(self.lbl_p4, self.sp4)
+        self.form.addRow(self.lbl_p5, self.sp5)
 
         self.lbl_hint = QLabel("")
         self.lbl_hint.setWordWrap(True)
@@ -307,7 +361,7 @@ class SectionManagerDialog(QDialog):
         self.list.currentRowChanged.connect(self._load_selected)
         self.btn_save_lib.clicked.connect(self.save_library)
         # live preview
-        for sp in [self.sp1, self.sp2, self.sp3, self.sp4]:
+        for sp in [self.sp1, self.sp2, self.sp3, self.sp4, self.sp5]:
             sp.valueChanged.connect(self._update_preview)
         self.cmb_type.currentTextChanged.connect(lambda _: self._update_preview())
 
@@ -335,6 +389,20 @@ class SectionManagerDialog(QDialog):
             self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -")
 
     def _update_hint(self, typ: str):
+        param_defs = {
+            "RectSolid": [("b(mm)", True), ("h(mm)", True), ("(unused)", False), ("(unused)", False), ("(unused)", False)],
+            "RectHollow": [("b(mm)", True), ("h(mm)", True), ("t(mm)", True), ("(unused)", False), ("(unused)", False)],
+            "CircleSolid": [("d(mm)", True), ("(unused)", False), ("(unused)", False), ("(unused)", False), ("(unused)", False)],
+            "CircleHollow": [("D(mm)", True), ("t(mm)", True), ("(unused)", False), ("(unused)", False), ("(unused)", False)],
+            "ISection": [("h(mm)", True), ("bf(mm)", True), ("tf(mm)", True), ("tw(mm)", True), ("(unused)", False)],
+        }
+        labels = [self.lbl_p1, self.lbl_p2, self.lbl_p3, self.lbl_p4, self.lbl_p5]
+        spins = [self.sp1, self.sp2, self.sp3, self.sp4, self.sp5]
+        for (title, visible), lbl, sp in zip(param_defs.get(typ, []), labels, spins):
+            lbl.setText(title)
+            lbl.setVisible(visible)
+            sp.setVisible(visible)
+
         if typ == "RectSolid":
             self.lbl_hint.setText("RectSolid: Param1=b(mm), Param2=h(mm). Param3/4 ignored.")
             self.ed_name.setText("Rect100x10")
@@ -346,7 +414,11 @@ class SectionManagerDialog(QDialog):
         elif typ == "CircleSolid":
             self.lbl_hint.setText("CircleSolid: Param1=d(mm). Others ignored.")
             self.ed_name.setText("Circle20")
-            self.sp1.setValue(20.0); self.sp2.setValue(1.0)
+            self.sp1.setValue(20.0); self.sp2.setValue(0.0); self.sp3.setValue(0.0); self.sp4.setValue(0.0)
+        elif typ == "CircleHollow":
+            self.lbl_hint.setText("CircleHollow: Param1=D(mm), Param2=t(mm). Others ignored.")
+            self.ed_name.setText("Pipe60x4")
+            self.sp1.setValue(60.0); self.sp2.setValue(4.0); self.sp3.setValue(0.0); self.sp4.setValue(0.0)
         else:
             self.lbl_hint.setText("ISection: Param1=h(mm), Param2=bf(mm), Param3=tf(mm), Param4=tw(mm)")
             self.ed_name.setText("I200")
@@ -382,9 +454,15 @@ class SectionManagerDialog(QDialog):
         if typ == "RectSolid":
             b = float(self.sp1.value()); h = float(self.sp2.value())
             props = rect_solid(b, h)
+        elif typ == "RectHollow":
+            b = float(self.sp1.value()); h = float(self.sp2.value()); t = float(self.sp3.value())
+            props = rect_hollow(b, h, t)
         elif typ == "CircleSolid":
             d = float(self.sp1.value())
             props = circle_solid(d)
+        elif typ == "CircleHollow":
+            d = float(self.sp1.value()); t = float(self.sp2.value())
+            props = circle_hollow(d, t)
         else:
             h = float(self.sp1.value()); bf = float(self.sp2.value()); tf = float(self.sp3.value()); tw = float(self.sp4.value())
             props = i_section(h, bf, tf, tw)
