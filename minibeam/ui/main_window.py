@@ -799,27 +799,11 @@ class MainWindow(QMainWindow):
                             f"{margin[i]:.9g}" if i < len(margin) else "",
                         ])
 
-                    x_vals = np.asarray(x, dtype=float)
-                    for row in node_rows:
-                        x_node = float(row[3])
-                        idx = int(np.argmin(np.abs(x_vals - x_node))) if x_vals.size else -1
-                        if idx >= 0 and abs(float(x_vals[idx]) - x_node) <= 1e-6:
-                            # Keep diagram values (V/M/sigma/MS) at node positions while
-                            # injecting node identity and reactions into the same row.
-                            merged_row = list(diag_rows[idx])
-                            merged_row[0] = row[0]
-                            merged_row[1] = row[1]
-                            merged_row[2] = row[2]
-                            merged_row[3] = row[3]
-                            merged_row[4] = row[4]
-                            merged_row[5] = row[5]
-                            merged_row[6] = row[6]
-                            merged_row[7] = row[7]
-                            diag_rows[idx] = merged_row
-                        else:
-                            diag_rows.append(row)
-
-                    for row in sorted(diag_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
+                    # Do not overwrite DIAG rows with NODE metadata/reactions.
+                    # Keeping NODE and DIAG rows independent ensures shear/moment
+                    # raw data in CSV is exactly the same data used by plots.
+                    all_rows = [*node_rows, *diag_rows]
+                    for row in sorted(all_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
                         w.writerow(row)
         except Exception as e:
             QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
