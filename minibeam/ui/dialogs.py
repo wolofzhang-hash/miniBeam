@@ -119,15 +119,20 @@ class MaterialManagerDialog(QDialog):
         self.ed_name = QLineEdit()
         self.ed_E = QDoubleSpinBox(); self.ed_E.setRange(0, 1e12); self.ed_E.setDecimals(3)
         self.ed_G = QDoubleSpinBox(); self.ed_G.setRange(0, 1e12); self.ed_G.setDecimals(3)
-        self.ed_nu = QDoubleSpinBox(); self.ed_nu.setRange(0.0, 0.49); self.ed_nu.setDecimals(3)
-        self.ed_rho = QDoubleSpinBox(); self.ed_rho.setRange(0, 1e6); self.ed_rho.setDecimals(9)
+        class NuSpinBox(QDoubleSpinBox):
+            def textFromValue(self, val: float) -> str:  # noqa: N802 (Qt API)
+                v = float(val)
+                if abs(v) < 1.0:
+                    return f"{v:.2f}"
+                return f"{v:.0f}"
+
+        self.ed_nu = NuSpinBox(); self.ed_nu.setRange(0.0, 0.49); self.ed_nu.setDecimals(2)
         self.ed_fy = QDoubleSpinBox(); self.ed_fy.setRange(0, 1e6); self.ed_fy.setDecimals(3)
 
         form.addRow("Name", self.ed_name)
         form.addRow("E (N/mm²)", self.ed_E)
         form.addRow("G (N/mm²)", self.ed_G)
         form.addRow("nu", self.ed_nu)
-        form.addRow("rho", self.ed_rho)
         form.addRow("sigma_y (N/mm²)", self.ed_fy)
 
         btns = QHBoxLayout()
@@ -154,7 +159,7 @@ class MaterialManagerDialog(QDialog):
         self.btn_save_lib.clicked.connect(self.save_library)
         self.list.currentRowChanged.connect(self.load_selected)
         # live update
-        for w in [self.ed_name, self.ed_E, self.ed_G, self.ed_nu, self.ed_rho, self.ed_fy]:
+        for w in [self.ed_name, self.ed_E, self.ed_G, self.ed_nu, self.ed_fy]:
             if hasattr(w, "textChanged"):
                 w.textChanged.connect(self.update_selected)
             else:
@@ -187,7 +192,6 @@ class MaterialManagerDialog(QDialog):
         self.ed_E.setValue(m.E)
         self.ed_G.setValue(m.G)
         self.ed_nu.setValue(m.nu)
-        self.ed_rho.setValue(m.rho)
         self.ed_fy.setValue(m.sigma_y)
 
     def update_selected(self, *_):
@@ -199,7 +203,6 @@ class MaterialManagerDialog(QDialog):
         m.E = float(self.ed_E.value())
         m.G = float(self.ed_G.value())
         m.nu = float(self.ed_nu.value())
-        m.rho = float(self.ed_rho.value())
         m.sigma_y = float(self.ed_fy.value())
         self.refresh()
 
