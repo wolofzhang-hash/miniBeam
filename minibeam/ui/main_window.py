@@ -804,7 +804,18 @@ class MainWindow(QMainWindow):
                         x_node = float(row[3])
                         idx = int(np.argmin(np.abs(x_vals - x_node))) if x_vals.size else -1
                         if idx >= 0 and abs(float(x_vals[idx]) - x_node) <= 1e-6:
-                            diag_rows[idx] = row
+                            # Keep diagram values (V/M/sigma/MS) at node positions while
+                            # injecting node identity and reactions into the same row.
+                            merged_row = list(diag_rows[idx])
+                            merged_row[0] = row[0]
+                            merged_row[1] = row[1]
+                            merged_row[2] = row[2]
+                            merged_row[3] = row[3]
+                            merged_row[4] = row[4]
+                            merged_row[5] = row[5]
+                            merged_row[6] = row[6]
+                            merged_row[7] = row[7]
+                            diag_rows[idx] = merged_row
                         else:
                             diag_rows.append(row)
 
