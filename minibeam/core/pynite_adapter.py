@@ -15,19 +15,15 @@ class SolveOutput:
     combo: str
     x_nodes: List[float]
     dy_nodes: List[float]
-    reactions: Dict[str, Dict[str, float]]  # point_name -> {FX, FY, MZ, MX}
+    reactions: Dict[str, Dict[str, float]]  # point_name -> {FY, MZ, FX}
     # diagrams (global x coordinate arrays)
     x_diag: np.ndarray
     dy_diag: np.ndarray
     rz_diag: np.ndarray
-    rx_diag: np.ndarray
     V: np.ndarray
     M: np.ndarray
-    T: np.ndarray
     # stress/margin sampled on same x_diag
     sigma: np.ndarray
-    tau: np.ndarray
-    sigma_vm: np.ndarray
     margin: np.ndarray
 
 class PyniteSolverError(RuntimeError):
@@ -106,7 +102,6 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             "FX": node.RxnFX.get(combo.name, 0.0),
             "FY": node.RxnFY.get(combo.name, 0.0),
             "MZ": node.RxnMZ.get(combo.name, 0.0),
-            "MX": getattr(node, "RxnMX", {}).get(combo.name, 0.0),
         }
 
     # diagrams: build a unified global x list (default 100 divisions + all beam points)
@@ -124,7 +119,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
@@ -132,10 +127,6 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         n = max(21, int(n_samples_per_member))
         xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
         _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
-        try:
-            _, T = _member_array(mem, "moment_array", "Mx", n, combo.name)
-        except PyniteSolverError:
-            T = np.zeros_like(np.asarray(xloc, dtype=float))
         has_dy_array = True
         try:
             xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name)
@@ -150,24 +141,14 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             has_rz_array = False
             xloc_rz = xloc
             RZ = np.zeros_like(np.asarray(xloc, dtype=float))
-        has_rx_array = True
-        try:
-            xloc_rx, RX = _member_array(mem, "rotation_array", "rx", n, combo.name)
-        except PyniteSolverError:
-            has_rx_array = False
-            xloc_rx = xloc
-            RX = np.zeros_like(np.asarray(xloc, dtype=float))
 
         xloc = np.asarray(xloc, dtype=float)
         xloc_dy = np.asarray(xloc_dy, dtype=float)
         xloc_rz = np.asarray(xloc_rz, dtype=float)
         V = np.asarray(V, dtype=float)
         M = np.asarray(M, dtype=float)
-        T = np.asarray(T, dtype=float)
         DY = np.asarray(DY, dtype=float)
         RZ = np.asarray(RZ, dtype=float)
-        xloc_rx = np.asarray(xloc_rx, dtype=float)
-        RX = np.asarray(RX, dtype=float)
 
         # map to global x
         node_i = (model.nodes[mem.i_node.name] if hasattr(model,'nodes') else model.Nodes[mem.i_node.name])
@@ -196,15 +177,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_local_mm_rz = xloc_rz * L if xmax_rz <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rz
         xg_rz = xi + x_local_mm_rz
 
-        xmax_rx = float(np.max(np.abs(xloc_rx))) if xloc_rx.size else 0.0
-        x_local_mm_rx = xloc_rx * L if xmax_rx <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_rx
-        xg_rx = xi + x_local_mm_rx
-
         order = np.argsort(xg)
         xg = xg[order]
         V = V[order]
         M = M[order]
-        T = T[order]
 
         order_dy = np.argsort(xg_dy)
         xg_dy = xg_dy[order_dy]
@@ -213,10 +189,6 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         order_rz = np.argsort(xg_rz)
         xg_rz = xg_rz[order_rz]
         RZ = RZ[order_rz]
-
-        order_rx = np.argsort(xg_rx)
-        xg_rx = xg_rx[order_rx]
-        RX = RX[order_rx]
 
         if xg_dy.size >= 2:
             DY = np.interp(xg, xg_dy, DY)
@@ -228,45 +200,30 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         elif xg.size:
             RZ = np.full_like(xg, RZ[0] if RZ.size else 0.0)
 
-        if xg_rx.size >= 2:
-            RX = np.interp(xg, xg_rx, RX)
-        elif xg.size:
-            RX = np.full_like(xg, RX[0] if RX.size else 0.0)
-
         sec = prj.sections[m.section_uid]
         # bending stress sigma = M*c/I (Mz uses Iz & c_z)
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
-        tau = np.array(T) * sec.c_t / max(sec.J, 1e-12)
-        sigma_vm = np.sqrt(np.square(sigma) + 3.0 * np.square(tau))
-        margin = sigma_allow / np.maximum(np.abs(sigma_vm), 1e-9) - 1.0
+        margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, RX, V, M, T, sigma, tau, sigma_vm, margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, sigma, margin))
 
     dy_all = np.zeros_like(x_diag, dtype=float)
     rz_all = np.zeros_like(x_diag, dtype=float)
-    rx_all = np.zeros_like(x_diag, dtype=float)
     V_all = np.zeros_like(x_diag, dtype=float)
     M_all = np.zeros_like(x_diag, dtype=float)
-    T_all = np.zeros_like(x_diag, dtype=float)
     sigma_all = np.zeros_like(x_diag, dtype=float)
-    tau_all = np.zeros_like(x_diag, dtype=float)
-    sigma_vm_all = np.zeros_like(x_diag, dtype=float)
     margin_all = np.zeros_like(x_diag, dtype=float)
 
     for idx, x in enumerate(x_diag):
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, DY, RZ, RX, V, M, T, sigma, tau, sigma_vm, margin = mdata
+        _, _, xg, DY, RZ, V, M, sigma, margin = mdata
         dy_all[idx] = np.interp(x, xg, DY)
         rz_all[idx] = np.interp(x, xg, RZ)
-        rx_all[idx] = np.interp(x, xg, RX)
         V_all[idx] = np.interp(x, xg, V)
         M_all[idx] = np.interp(x, xg, M)
-        T_all[idx] = np.interp(x, xg, T)
         sigma_all[idx] = np.interp(x, xg, sigma)
-        tau_all[idx] = np.interp(x, xg, tau)
-        sigma_vm_all[idx] = np.interp(x, xg, sigma_vm)
         margin_all[idx] = np.interp(x, xg, margin)
 
     return SolveOutput(
@@ -277,13 +234,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_diag=np.array(x_diag),
         dy_diag=np.array(dy_all),
         rz_diag=np.array(rz_all),
-        rx_diag=np.array(rx_all),
         V=np.array(V_all),
         M=np.array(M_all),
-        T=np.array(T_all),
         sigma=np.array(sigma_all),
-        tau=np.array(tau_all),
-        sigma_vm=np.array(sigma_vm_all),
         margin=np.array(margin_all),
     )
 
@@ -300,7 +253,7 @@ def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
 
 
 def _pick_member_curve(
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     x: float,
     eps: float = 1e-9,
 ):

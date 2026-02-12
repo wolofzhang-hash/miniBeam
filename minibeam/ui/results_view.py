@@ -112,14 +112,6 @@ class ResultsView(QWidget):
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
 
-        elif rtype == "Torsion T":
-            xt, yt = _clip(out.x_diag, out.T)
-            ax.plot(_norm(xt), yt)
-            _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("T (N·mm)")
-            ax.set_title("Torsion T (Mx)")
-
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
@@ -127,30 +119,6 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("sigma (N/mm²)")
             ax.set_title("Bending Stress sigma = M*c/I")
-
-        elif rtype == "Torsional Stress τ":
-            xtau, ytau = _clip(out.x_diag, out.tau)
-            ax.plot(_norm(xtau), ytau)
-            _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("tau (N/mm²)")
-            ax.set_title("Torsional Stress tau = T*c_t/J")
-
-        elif rtype == "Von Mises σvm":
-            xvm, yvm = _clip(out.x_diag, out.sigma_vm)
-            ax.plot(_norm(xvm), yvm)
-            _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("sigma_vm (N/mm²)")
-            ax.set_title("Von Mises from bending + torsion")
-
-        elif rtype == "Twist θx":
-            xrx, yrx = _clip(out.x_diag, out.rx_diag)
-            ax.plot(_norm(xrx), yrx)
-            _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("theta_x (rad)")
-            ax.set_title("Twist (RX)")
 
         elif rtype == "Margin MS":
             xm2, ym2 = _clip(out.x_diag, out.margin)

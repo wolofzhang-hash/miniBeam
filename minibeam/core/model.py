@@ -17,8 +17,8 @@ class Constraint:
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming: FY, MZ, MX
-    direction: Literal["FY", "MZ", "MX"]
+    # direction in PyNite naming: FY, MZ (Phase-1)
+    direction: Literal["FY", "MZ"]
     value: float
     case: str = "LC1"
 
@@ -58,7 +58,6 @@ class Section:
     Iz: float = 1.0
     J: float = 1.0
     c_z: float = 1.0  # max distance for bending about z (Mz -> stress uses c_z with Iz)
-    c_t: float = 1.0  # effective torsion stress radius (T*c_t/J)
 
     # Wizard parameters (for sketch/preview). Units: mm.
     p1: float = 0.0
