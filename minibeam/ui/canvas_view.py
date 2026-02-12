@@ -307,9 +307,10 @@ class BeamCanvas(QGraphicsView):
                 self.scene.addItem(c)
                 self._labels.append(c)
 
-        # Loads (red arrows / red moments)
+        # Loads (force/moment symbols)
         # Scale by max magnitude in active load case, keep a nice pixel size.
         active_case = self.project.active_load_case
+        max_fx = 0.0
         max_fy = 0.0
         max_mz = 0.0
         max_mx = 0.0
@@ -317,12 +318,20 @@ class BeamCanvas(QGraphicsView):
             for ld in p.nodal_loads:
                 if ld.case != active_case:
                     continue
-                if ld.direction == "FY":
+                if ld.direction == "FX":
+                    max_fx = max(max_fx, abs(ld.value))
+                elif ld.direction == "FY":
                     max_fy = max(max_fy, abs(ld.value))
                 elif ld.direction == "MZ":
                     max_mz = max(max_mz, abs(ld.value))
                 elif ld.direction == "MX":
                     max_mx = max(max_mx, abs(ld.value))
+
+        def fx_len(val: float) -> float:
+            if max_fx <= 1e-12:
+                return 0.0
+            L = 55.0 * abs(val) / max_fx
+            return max(14.0, min(80.0, L))
 
         def fy_len(val: float) -> float:
             if max_fy <= 1e-12:
@@ -343,6 +352,7 @@ class BeamCanvas(QGraphicsView):
             return max(24.0, min(70.0, L))
 
         red_pen = QPen(Qt.GlobalColor.red, 2)
+        blue_pen = QPen(Qt.GlobalColor.blue, 2)
         # Important: do NOT fill load symbols (especially moments). When a
         # QGraphicsPathItem has a brush, Qt will fill any enclosed area and a
         # moment arc can easily look like a solid red disk.
@@ -387,6 +397,41 @@ class BeamCanvas(QGraphicsView):
                     txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
                     txt.setPos(p.x + 8, 0 + y2)
+                    txt.setZValue(21)
+                    self.scene.addItem(txt)
+                    self._labels.append(txt)
+
+                elif ld.direction == "FX":
+                    L = fx_len(ld.value)
+                    if L <= 0.5:
+                        continue
+                    d = 1.0 if ld.value >= 0 else -1.0
+                    x2 = d * L
+                    y = 0.0
+                    ah = 6.0
+                    path = QPainterPath()
+                    path.moveTo(0, y)
+                    path.lineTo(x2, y)
+                    path.moveTo(x2, y)
+                    path.lineTo(x2 - d * ah, y - ah * 0.7)
+                    path.moveTo(x2, y)
+                    path.lineTo(x2 - d * ah, y + ah * 0.7)
+                    it = QGraphicsPathItem(path)
+                    it.setPen(red_pen)
+                    it.setBrush(no_brush)
+                    it.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                    it.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                    it.setAcceptHoverEvents(False)
+                    it.setZValue(20)
+                    it.setPos(p.x, 0)
+                    self.scene.addItem(it)
+                    self._labels.append(it)
+
+                    txt = QGraphicsSimpleTextItem(f"{ld.value:.1f}")
+                    txt.setBrush(Qt.GlobalColor.red)
+                    txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                    txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                    txt.setPos(p.x + x2 + (8.0 * d), y - 18)
                     txt.setZValue(21)
                     self.scene.addItem(txt)
                     self._labels.append(txt)
@@ -446,7 +491,7 @@ class BeamCanvas(QGraphicsView):
                     # Draw torsion along the beam axis (through node), using
                     # right-hand-rule sign convention:
                     # +MX -> arrows point to +X, -MX -> arrows point to -X.
-                    y = 0.0
+                    y = 24.0
                     ah = 6.0
                     d = 1.0 if ld.value >= 0 else -1.0
                     hx = ah * d
@@ -466,7 +511,7 @@ class BeamCanvas(QGraphicsView):
                     path.lineTo(half - hx, y + ah * 0.7)
 
                     it = QGraphicsPathItem(path)
-                    it.setPen(red_pen)
+                    it.setPen(blue_pen)
                     it.setBrush(no_brush)
                     it.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     it.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -477,7 +522,7 @@ class BeamCanvas(QGraphicsView):
                     self._labels.append(it)
 
                     txt = QGraphicsSimpleTextItem(f"{ld.value:.1f}")
-                    txt.setBrush(Qt.GlobalColor.red)
+                    txt.setBrush(Qt.GlobalColor.blue)
                     txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
                     txt.setPos(p.x + half + 6, y - 18)

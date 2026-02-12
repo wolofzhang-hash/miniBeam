@@ -223,6 +223,7 @@ class MainWindow(QMainWindow):
             "Deflection",
             "Rotation θ",
             "FBD",
+            "Axial N",
             "Shear V",
             "Moment M",
             "Torsion T",
@@ -700,7 +701,14 @@ class MainWindow(QMainWindow):
             if not pids:
                 return
             from ..core.model import NodalLoad
-            direction = "FY" if "FY" in typ else "MZ"
+            if "FX" in typ:
+                direction = "FX"
+            elif "FY" in typ:
+                direction = "FY"
+            elif "MX" in typ:
+                direction = "MX"
+            else:
+                direction = "MZ"
             for uid in pids:
                 self.project.points[uid].nodal_loads.append(NodalLoad(direction=direction, value=val, case=case))
         else:
@@ -813,6 +821,7 @@ class MainWindow(QMainWindow):
             mask = (xg >= x0 - 1e-9) & (xg <= x1 + 1e-9)
             xg = xg[mask]
             x = xg - x0
+            N = np.asarray(getattr(out, "N", np.zeros_like(xg)), dtype=float)[mask]
             V = np.asarray(getattr(out, "V", []), dtype=float)[mask]
             M = np.asarray(getattr(out, "M", []), dtype=float)[mask]
             T = np.asarray(getattr(out, "T", []), dtype=float)[mask]
@@ -825,7 +834,7 @@ class MainWindow(QMainWindow):
             x = np.array([], dtype=float)
             dy = np.array([], dtype=float)
             rz = np.array([], dtype=float)
-            V = M = T = tau_t = sigma = margin = np.array([], dtype=float)
+            N = V = M = T = tau_t = sigma = margin = np.array([], dtype=float)
 
         import csv
         try:
@@ -833,7 +842,7 @@ class MainWindow(QMainWindow):
                 w = csv.writer(f)
 
                 # Unified table header (avoid duplicated header blocks)
-                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "Rxn_MX_Nmm", "V_N", "M_Nmm", "T_Nmm", "tau_torsion_Nmm2", "sigma_Nmm2", "MS"])
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "Rxn_MX_Nmm", "N_N", "V_N", "M_Nmm", "T_Nmm", "tau_torsion_Nmm2", "sigma_Nmm2", "MS"])
 
                 node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
@@ -849,6 +858,8 @@ class MainWindow(QMainWindow):
                         f"{float(r.get('FY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
                         f"{float(r.get('MX', 0.0)):.9g}",
+                        "",
+                        "",
                         "",
                         "",
                         "",
@@ -873,6 +884,7 @@ class MainWindow(QMainWindow):
                             "",
                             "",
                             "",
+                            f"{N[i]:.9g}" if i < len(N) else "",
                             f"{V[i]:.9g}" if i < len(V) else "",
                             f"{M[i]:.9g}" if i < len(M) else "",
                             f"{T[i]:.9g}" if i < len(T) else "",
@@ -1150,7 +1162,7 @@ class MainWindow(QMainWindow):
         self._schedule_refresh()
 
     def edit_nodal_loads_selected(self):
-        """Open a dialog to edit FY, MZ and MX nodal loads for selected point(s) in active load case.
+        """Open a dialog to edit FX/FY, MZ and MX nodal loads for selected point(s) in active load case.
         Loads are unique per (direction, loadcase) and will be overwritten (no duplicates)."""
         pids = self.canvas.selected_point_uids()
         if not pids:
@@ -1159,7 +1171,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Load (FY, MZ, MX)")
+        dlg.setWindowTitle("Load (FX, FY, MZ, MX)")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1182,11 +1194,14 @@ class MainWindow(QMainWindow):
         lc = self.project.active_load_case
         p0 = self.project.points.get(pids[0])
 
+        fx_en, fx_val = (False, 0.0)
         fy_en, fy_val = (False, 0.0)
         mz_en, mz_val = (False, 0.0)
         mx_en, mx_val = (False, 0.0)
         if p0:
             for ld in p0.nodal_loads:
+                if ld.case == lc and ld.direction == "FX":
+                    fx_en, fx_val = (True, ld.value)
                 if ld.case == lc and ld.direction == "FY":
                     fy_en, fy_val = (True, ld.value)
                 if ld.case == lc and ld.direction == "MZ":
@@ -1194,6 +1209,7 @@ class MainWindow(QMainWindow):
                 if ld.case == lc and ld.direction == "MX":
                     mx_en, mx_val = (True, ld.value)
 
+        cb_fx, sb_fx = mk_row("FX (N)", fx_en, fx_val)
         cb_fy, sb_fy = mk_row("FY (N)", fy_en, fy_val)
         cb_mz, sb_mz = mk_row("MZ (N·mm)", mz_en, mz_val)
         cb_mx, sb_mx = mk_row("MX (N·mm)", mx_en, mx_val)
@@ -1213,8 +1229,10 @@ class MainWindow(QMainWindow):
                 continue
 
             # remove existing for this LC
-            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FY", "MZ", "MX")]
+            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FX", "FY", "MZ", "MX")]
 
+            if cb_fx.isChecked():
+                p.nodal_loads.append(NodalLoad(direction="FX", value=float(sb_fx.value()), case=lc))
             if cb_fy.isChecked():
                 p.nodal_loads.append(NodalLoad(direction="FY", value=float(sb_fy.value()), case=lc))
             if cb_mz.isChecked():
