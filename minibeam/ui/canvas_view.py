@@ -443,22 +443,27 @@ class BeamCanvas(QGraphicsView):
                     if L <= 0.5:
                         continue
                     half = L / 2.0
-                    y = -40.0
+                    # Draw torsion along the beam axis (through node), using
+                    # right-hand-rule sign convention:
+                    # +MX -> arrows point to +X, -MX -> arrows point to -X.
+                    y = 0.0
                     ah = 6.0
+                    d = 1.0 if ld.value >= 0 else -1.0
+                    hx = ah * d
 
                     path = QPainterPath()
                     path.moveTo(-half, y)
                     path.lineTo(half, y)
-                    # left arrow head
+                    # double-arrow style at both ends, both heads indicate
+                    # torque direction (right-hand rule along local +X axis).
                     path.moveTo(-half, y)
-                    path.lineTo(-half + ah, y - ah * 0.7)
+                    path.lineTo(-half - hx, y - ah * 0.7)
                     path.moveTo(-half, y)
-                    path.lineTo(-half + ah, y + ah * 0.7)
-                    # right arrow head
+                    path.lineTo(-half - hx, y + ah * 0.7)
                     path.moveTo(half, y)
-                    path.lineTo(half - ah, y - ah * 0.7)
+                    path.lineTo(half - hx, y - ah * 0.7)
                     path.moveTo(half, y)
-                    path.lineTo(half - ah, y + ah * 0.7)
+                    path.lineTo(half - hx, y + ah * 0.7)
 
                     it = QGraphicsPathItem(path)
                     it.setPen(red_pen)
@@ -475,7 +480,7 @@ class BeamCanvas(QGraphicsView):
                     txt.setBrush(Qt.GlobalColor.red)
                     txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                    txt.setPos(p.x + half + 6, y - 2)
+                    txt.setPos(p.x + half + 6, y - 18)
                     txt.setZValue(21)
                     self.scene.addItem(txt)
                     self._labels.append(txt)
