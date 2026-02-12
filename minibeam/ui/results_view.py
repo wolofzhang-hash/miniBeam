@@ -235,13 +235,48 @@ class ResultsView(QWidget):
             x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
         elif rtype == "Margin MS":
-            xm2, ym2 = _clip(out.x_diag, out.margin)
-            ax.plot(_norm(xm2), ym2)
+            xm2, ms_plastic = _clip(out.x_diag, out.margin)
+            xm2n = _norm(xm2)
+            ms_plastic = np.asarray(ms_plastic, dtype=float)
+            ms_elastic_src = getattr(out, "margin_elastic", out.margin)
+            _, ms_elastic = _clip(out.x_diag, ms_elastic_src)
+            ms_elastic = np.asarray(ms_elastic, dtype=float)
+
+            def _plot_ms_bands(x_vals, y_vals, label=None, alpha: float = 0.95, lw: float = 2.0):
+                x_vals = np.asarray(x_vals, dtype=float)
+                y_vals = np.asarray(y_vals, dtype=float)
+                if x_vals.size == 0:
+                    return
+                bands = [
+                    (y_vals < 0.0, "#d62728", "MS < 0"),
+                    ((y_vals >= 0.0) & (y_vals <= 2.0), "#1f77b4", "0 ≤ MS ≤ 2"),
+                    (y_vals > 2.0, "#2ca02c", "MS > 2"),
+                ]
+                first_labeled = False
+                for mask, color, band_label in bands:
+                    if np.count_nonzero(mask) < 2:
+                        continue
+                    lbl = None
+                    if not first_labeled:
+                        lbl = label
+                        first_labeled = True
+                    elif label is None:
+                        lbl = band_label
+                    ax.plot(x_vals, np.ma.masked_where(~mask, y_vals), color=color, linewidth=lw, alpha=alpha, label=lbl)
+
+            has_plastic_correction = bool(ms_plastic.size) and bool(ms_elastic.size) and not np.allclose(ms_plastic, ms_elastic, rtol=1e-5, atol=1e-8)
+            _plot_ms_bands(xm2n, ms_elastic, label="MS 弹性", alpha=0.65 if has_plastic_correction else 0.95, lw=1.8 if has_plastic_correction else 2.2)
+            if has_plastic_correction:
+                _plot_ms_bands(xm2n, ms_plastic, label="MS 塑性修正", alpha=0.95, lw=2.4)
             _draw_zero_line()
-            ax.set_ylim(-1, 2)
-            _set_labels("x (mm)", "MS", "Margin of Safety (plastic-corrected: allow/|sigma|-1)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes), text_scale=text_scale)
-            x_for_click, y_for_click = _norm(xm2), np.asarray(ym2, dtype=float)
+            ax.axhline(2.0, linewidth=1, color="#66aa66", linestyle=":")
+            lo = float(min(np.min(ms_elastic), np.min(ms_plastic))) if ms_plastic.size else -1.0
+            hi = float(max(np.max(ms_elastic), np.max(ms_plastic))) if ms_plastic.size else 2.5
+            ax.set_ylim(min(-1.0, lo - 0.2), max(2.2, hi + 0.2))
+            _set_labels("x (mm)", "MS", "Margin of Safety (Elastic + Plastic Corrected)")
+            ResultsView._annotate_extrema_and_nodes(ax, xm2n, ms_plastic, _norm(out.x_nodes), text_scale=text_scale)
+            ax.legend(loc="best", fontsize=max(7, int(round(8 * text_scale))))
+            x_for_click, y_for_click = xm2n, ms_plastic
 
         try:
             ax.set_xlim(0, max(0.0, x1 - x0))

@@ -34,6 +34,8 @@ class SolveOutput:
     sigma: np.ndarray
     tau_torsion: np.ndarray
     margin: np.ndarray
+    margin_elastic: np.ndarray
+    margin_plastic: np.ndarray
 
 class PyniteSolverError(RuntimeError):
     pass
@@ -202,7 +204,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     # Allowable stress is member-dependent via assigned material.
 
     # (x0, x1, xg, DY, RZ, N, V, M, T, sigma, tau_torsion, margin)
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
@@ -403,13 +405,15 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         if shape_factor <= 0 and Zp > 0:
             shape_factor = Zp / Ze
         shape_factor = max(shape_factor, 1.0)
+        sigma_elastic = sigma_axial + sigma_bending
         sigma = sigma_axial + sigma_bending / shape_factor
         # torsion shear stress (simplified): tau = T*r/J, use r ~= c_z as a conservative proxy
         r_max = max(getattr(sec, "c_z", 0.0), 1e-9)
         tau_t = np.array(T) * r_max / max(sec.J, 1e-12)
+        margin_elastic = sigma_allow / np.maximum(np.abs(sigma_elastic), 1e-9) - 1.0
         margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, DZ, RY, N, V, M, Vz, My, T, sigma, tau_t, margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, DZ, RY, N, V, M, Vz, My, T, sigma, tau_t, margin, margin_elastic))
 
     dy_all = np.zeros_like(x_diag, dtype=float)
     rz_all = np.zeros_like(x_diag, dtype=float)
@@ -424,12 +428,13 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     sigma_all = np.zeros_like(x_diag, dtype=float)
     tau_all = np.zeros_like(x_diag, dtype=float)
     margin_all = np.zeros_like(x_diag, dtype=float)
+    margin_elastic_all = np.zeros_like(x_diag, dtype=float)
 
     for idx, x in enumerate(x_diag):
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, DY, RZ, DZ, RY, N, V, M, Vz, My, T, sigma, tau_t, margin = mdata
+        _, _, xg, DY, RZ, DZ, RY, N, V, M, Vz, My, T, sigma, tau_t, margin, margin_elastic = mdata
         dy_all[idx] = np.interp(x, xg, DY)
         rz_all[idx] = np.interp(x, xg, RZ)
         dz_all[idx] = np.interp(x, xg, DZ)
@@ -443,6 +448,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_all[idx] = np.interp(x, xg, sigma)
         tau_all[idx] = np.interp(x, xg, tau_t)
         margin_all[idx] = np.interp(x, xg, margin)
+        margin_elastic_all[idx] = np.interp(x, xg, margin_elastic)
 
     return SolveOutput(
         combo=combo.name,
@@ -464,6 +470,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma=np.array(sigma_all),
         tau_torsion=np.array(tau_all),
         margin=np.array(margin_all),
+        margin_elastic=np.array(margin_elastic_all),
+        margin_plastic=np.array(margin_all),
     )
 
 
