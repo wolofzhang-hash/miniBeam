@@ -201,7 +201,7 @@ class MaterialManagerDialog(QDialog):
         self.btn_del = QPushButton("Delete")
         self.btn_model_to_library = QPushButton("Model -> Library")
         self.btn_add_from_library = QPushButton("Library -> Model")
-        self.btn_edit_lib = QPushButton("Enable Library Edit (Risky)")
+        self.btn_edit_lib = QPushButton("Edit Library")
         self.btn_save_lib = QPushButton("Save Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
@@ -372,16 +372,6 @@ class MaterialManagerDialog(QDialog):
         if scope != "model" or uid not in self.model_materials:
             return
 
-        reply = QMessageBox.warning(
-            self,
-            "Materials",
-            "将模型材料写入 Library 会影响后续项目。是否继续？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
         src = self.model_materials[uid]
         same_uid = self._find_same_material(self.library_materials, src)
         if same_uid:
@@ -439,7 +429,7 @@ class MaterialManagerDialog(QDialog):
 
     def save_library(self):
         if not self._library_edit_enabled:
-            QMessageBox.warning(self, "Materials", "Library 编辑未启用。请先点击“Enable Library Edit (Risky)”。")
+            QMessageBox.warning(self, "Materials", "Library 编辑未启用。请先点击“Edit Library”。")
             return
         try:
             save_material_library(self.library_materials)
@@ -512,7 +502,7 @@ class SectionManagerDialog(QDialog):
         self.btn_del = QPushButton("Delete")
         self.btn_model_to_library = QPushButton("Model -> Library")
         self.btn_add_from_library = QPushButton("Library -> Model")
-        self.btn_edit_lib = QPushButton("Enable Library Edit (Risky)")
+        self.btn_edit_lib = QPushButton("Edit Library")
         self.btn_save_lib = QPushButton("Save Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
@@ -766,16 +756,6 @@ class SectionManagerDialog(QDialog):
         if scope != "model" or uid not in self.model_sections:
             return
 
-        reply = QMessageBox.warning(
-            self,
-            "Sections",
-            "将模型截面写入 Library 会影响后续项目。是否继续？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-
         src = self.model_sections[uid]
         same_uid = self._find_same_section(self.library_sections, src)
         if same_uid:
@@ -828,7 +808,7 @@ class SectionManagerDialog(QDialog):
 
     def save_library(self):
         if not self._library_edit_enabled:
-            QMessageBox.warning(self, "Sections", "Library 编辑未启用。请先点击“Enable Library Edit (Risky)”。")
+            QMessageBox.warning(self, "Sections", "Library 编辑未启用。请先点击“Edit Library”。")
             return
         try:
             save_section_library(self.library_sections)
