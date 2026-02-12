@@ -22,8 +22,10 @@ class SolveOutput:
     rz_diag: np.ndarray
     V: np.ndarray
     M: np.ndarray
+    T: np.ndarray  # torsion/torque about local x (N·mm)
     # stress/margin sampled on same x_diag
     sigma: np.ndarray
+    tau_torsion: np.ndarray
     margin: np.ndarray
 
 class PyniteSolverError(RuntimeError):
@@ -55,15 +57,30 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sec = prj.sections[m.section_uid].name
         model.add_member(m.name, i_node=i, j_node=j, material_name=mat, section_name=sec)
 
-    # supports and enforced displacements
-    # Use def_support for boolean fixed DOF, and def_node_disp for imposed value
-    for p in pts_sorted:
+    # Phase-1 is mostly 2D bending, but we also support torsion about X via RX + nodal MX.
+    # To allow torsion, RX must NOT be globally locked.
+    # We still lock DZ and RY for a planar (XY) model.
+    any_rx_fixed = any(("RX" in p.constraints and p.constraints["RX"].enabled) for p in pts_sorted)
+
+    for idx, p in enumerate(pts_sorted):
         dx = ("DX" in p.constraints and p.constraints["DX"].enabled)
         dy = ("DY" in p.constraints and p.constraints["DY"].enabled)
         rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
+        rx = ("RX" in p.constraints and p.constraints["RX"].enabled)
 
-        # lock DZ, RX, RY true to keep 2D? but we can just lock DZ,RX,RY by default for all nodes
-        model.def_support(p.name, support_DX=dx, support_DY=dy, support_DZ=True, support_RX=True, support_RY=True, support_RZ=rz)
+        # If user didn't fix RX anywhere, we fix RX at the first node to remove rigid-body twist.
+        if not any_rx_fixed and idx == 0:
+            rx = True
+
+        model.def_support(
+            p.name,
+            support_DX=dx,
+            support_DY=dy,
+            support_DZ=True,
+            support_RX=rx,
+            support_RY=True,
+            support_RZ=rz,
+        )
 
         if dx and abs(p.constraints["DX"].value) > 0:
             model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
@@ -71,6 +88,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             model.def_node_disp(p.name, "DY", p.constraints["DY"].value)
         if rz and abs(p.constraints["RZ"].value) > 0:
             model.def_node_disp(p.name, "RZ", p.constraints["RZ"].value)
+        if rx and ("RX" in p.constraints) and abs(p.constraints["RX"].value) > 0:
+            model.def_node_disp(p.name, "RX", p.constraints["RX"].value)
 
     # load combos
     combo = prj.combos[combo_name]
@@ -102,6 +121,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             "FX": node.RxnFX.get(combo.name, 0.0),
             "FY": node.RxnFY.get(combo.name, 0.0),
             "MZ": node.RxnMZ.get(combo.name, 0.0),
+            "MX": getattr(node, "RxnMX", {}).get(combo.name, 0.0) if hasattr(node, "RxnMX") else 0.0,
         }
 
     # diagrams: build a unified global x list (default 100 divisions + all beam points)
@@ -119,7 +139,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sigma_y = next(iter(prj.materials.values())).sigma_y
     sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
 
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    # (x0, x1, xg, DY, RZ, V, M, T, sigma, tau_torsion, margin)
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
@@ -127,6 +148,18 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         n = max(21, int(n_samples_per_member))
         xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
         _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
+        # torsion/torque about local x (often exposed as moment_array('Mx') or torque_array)
+        try:
+            xloc_t, T = _member_array(mem, "moment_array", "Mx", n, combo.name)
+        except Exception:
+            try:
+                xloc_t, T = _member_array(mem, "torque_array", None, n, combo.name)
+            except Exception:
+                try:
+                    xloc_t, T = _member_array(mem, "torsion_array", None, n, combo.name)
+                except Exception:
+                    xloc_t = xloc
+                    T = np.zeros_like(np.asarray(xloc, dtype=float))
         has_dy_array = True
         try:
             xloc_dy, DY = _member_array(mem, "deflection_array", "dy", n, combo.name)
@@ -145,8 +178,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         xloc = np.asarray(xloc, dtype=float)
         xloc_dy = np.asarray(xloc_dy, dtype=float)
         xloc_rz = np.asarray(xloc_rz, dtype=float)
+        xloc_t = np.asarray(xloc_t, dtype=float)
         V = np.asarray(V, dtype=float)
         M = np.asarray(M, dtype=float)
+        T = np.asarray(T, dtype=float)
         DY = np.asarray(DY, dtype=float)
         RZ = np.asarray(RZ, dtype=float)
 
@@ -169,6 +204,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_local_mm = xloc * L if xmax <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc
         xg = xi + x_local_mm
 
+        xmax_t = float(np.max(np.abs(xloc_t))) if xloc_t.size else 0.0
+        x_local_mm_t = xloc_t * L if xmax_t <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_t
+        xg_t = xi + x_local_mm_t
+
         xmax_dy = float(np.max(np.abs(xloc_dy))) if xloc_dy.size else 0.0
         x_local_mm_dy = xloc_dy * L if xmax_dy <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_dy
         xg_dy = xi + x_local_mm_dy
@@ -181,6 +220,14 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         xg = xg[order]
         V = V[order]
         M = M[order]
+
+        order_t = np.argsort(xg_t)
+        xg_t = xg_t[order_t]
+        T = T[order_t]
+        if xg_t.size >= 2:
+            T = np.interp(xg, xg_t, T)
+        elif xg.size:
+            T = np.full_like(xg, T[0] if T.size else 0.0)
 
         order_dy = np.argsort(xg_dy)
         xg_dy = xg_dy[order_dy]
@@ -203,27 +250,34 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sec = prj.sections[m.section_uid]
         # bending stress sigma = M*c/I (Mz uses Iz & c_z)
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
+        # torsion shear stress (simplified): tau = T*r/J, use r ~= c_z as a conservative proxy
+        r_max = max(getattr(sec, "c_z", 0.0), 1e-9)
+        tau_t = np.array(T) * r_max / max(sec.J, 1e-12)
         margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, sigma, margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, T, sigma, tau_t, margin))
 
     dy_all = np.zeros_like(x_diag, dtype=float)
     rz_all = np.zeros_like(x_diag, dtype=float)
     V_all = np.zeros_like(x_diag, dtype=float)
     M_all = np.zeros_like(x_diag, dtype=float)
+    T_all = np.zeros_like(x_diag, dtype=float)
     sigma_all = np.zeros_like(x_diag, dtype=float)
+    tau_all = np.zeros_like(x_diag, dtype=float)
     margin_all = np.zeros_like(x_diag, dtype=float)
 
     for idx, x in enumerate(x_diag):
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, DY, RZ, V, M, sigma, margin = mdata
+        _, _, xg, DY, RZ, V, M, T, sigma, tau_t, margin = mdata
         dy_all[idx] = np.interp(x, xg, DY)
         rz_all[idx] = np.interp(x, xg, RZ)
         V_all[idx] = np.interp(x, xg, V)
         M_all[idx] = np.interp(x, xg, M)
+        T_all[idx] = np.interp(x, xg, T)
         sigma_all[idx] = np.interp(x, xg, sigma)
+        tau_all[idx] = np.interp(x, xg, tau_t)
         margin_all[idx] = np.interp(x, xg, margin)
 
     return SolveOutput(
@@ -236,7 +290,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         rz_diag=np.array(rz_all),
         V=np.array(V_all),
         M=np.array(M_all),
+        T=np.array(T_all),
         sigma=np.array(sigma_all),
+        tau_torsion=np.array(tau_all),
         margin=np.array(margin_all),
     )
 
@@ -253,7 +309,7 @@ def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
 
 
 def _pick_member_curve(
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     x: float,
     eps: float = 1e-9,
 ):
@@ -264,18 +320,28 @@ def _pick_member_curve(
     return member_curves[-1] if member_curves else None
 
 
-def _member_array(mem, method_name: str, direction: str, n: int, combo_name: str):
+def _member_array(mem, method_name: str, direction: str | None, n: int, combo_name: str):
     method = getattr(mem, method_name, None)
     if method is None:
         raise PyniteSolverError(f"PyNite member 缺少方法: {method_name}")
 
-    attempts = [
-        lambda: method(direction, n, combo_name=combo_name),
-        lambda: method(direction, n),
-        lambda: method(direction=direction, n_points=n, combo_name=combo_name),
-        lambda: method(direction=direction, n_points=n),
-        lambda: method(direction, n_points=n, combo_name=combo_name),
-    ]
+    attempts = []
+    if direction is not None:
+        attempts.extend([
+            lambda: method(direction, n, combo_name=combo_name),
+            lambda: method(direction, n),
+            lambda: method(direction=direction, n_points=n, combo_name=combo_name),
+            lambda: method(direction=direction, n_points=n),
+            lambda: method(direction, n_points=n, combo_name=combo_name),
+        ])
+    # Some methods (e.g., torque_array) may not take a direction.
+    attempts.extend([
+        lambda: method(n, combo_name=combo_name),
+        lambda: method(n),
+        lambda: method(n_points=n, combo_name=combo_name),
+        lambda: method(n_points=n),
+        lambda: method(combo_name=combo_name, n_points=n),
+    ])
     last_error = None
     for f in attempts:
         try:
