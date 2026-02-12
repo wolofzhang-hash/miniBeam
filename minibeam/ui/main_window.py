@@ -387,6 +387,8 @@ class MainWindow(QMainWindow):
         if before == after:
             return
         self.undo_stack.push(label, before, after)
+        self.last_results = None
+        self.canvas.clear_support_reactions()
 
     def undo(self):
         d = self.undo_stack.undo()
@@ -397,6 +399,8 @@ class MainWindow(QMainWindow):
         self.act_auto_members.blockSignals(True)
         self.act_auto_members.setChecked(self.project.auto_members)
         self.act_auto_members.blockSignals(False)
+        self.last_results = None
+        self.canvas.clear_support_reactions()
         self._schedule_refresh()
 
     def redo(self):
@@ -407,6 +411,8 @@ class MainWindow(QMainWindow):
         self.act_auto_members.blockSignals(True)
         self.act_auto_members.setChecked(self.project.auto_members)
         self.act_auto_members.blockSignals(False)
+        self.last_results = None
+        self.canvas.clear_support_reactions()
         self._schedule_refresh()
 
     def repeat_last_model_action(self):
@@ -764,6 +770,7 @@ class MainWindow(QMainWindow):
             self.project.rebuild_names()
             out = solve_with_pynite(self.project, "COMB1", n_samples_per_member=int(getattr(getattr(self, "sp_samples", None), "value", lambda: 50)()))
             self.last_results = out
+            self.canvas.set_support_reactions(out.reactions)
             QMessageBox.information(self, "Solve", "求解成功。请到 Results 里查看。")
         except PyniteSolverError as e:
             QMessageBox.critical(self, "PyNite Error", str(e))
@@ -1038,6 +1045,7 @@ class MainWindow(QMainWindow):
         self.project.members.clear()
         self.project.rebuild_names()
         self.last_results = None
+        self.canvas.clear_support_reactions()
         self.undo_stack.clear()
         self._schedule_refresh()
 
@@ -1065,6 +1073,7 @@ class MainWindow(QMainWindow):
             # Re-bind project to canvas
             self.canvas.project = self.project
             self.last_results = None
+            self.canvas.clear_support_reactions()
             self.undo_stack.clear()
             self._schedule_refresh(full=True)
         except Exception as e:

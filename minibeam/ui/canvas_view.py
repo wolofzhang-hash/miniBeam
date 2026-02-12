@@ -106,6 +106,7 @@ class BeamCanvas(QGraphicsView):
         self._point_items: Dict[str, PointItem] = {}
         self._member_items: Dict[str, MemberItem] = {}
         self._labels: List[QGraphicsSimpleTextItem] = []
+        self._reactions_by_point: Dict[str, Dict[str, float]] = {}
 
         # Track point positions at mouse-press so we only emit point_moved when
         # a point actually changed X. This prevents a double-click from causing
@@ -173,6 +174,16 @@ class BeamCanvas(QGraphicsView):
 
     def set_project(self, prj: Project):
         self.project = prj
+
+    def set_support_reactions(self, reactions: Dict[str, Dict[str, float]] | None):
+        self._reactions_by_point = dict(reactions or {})
+        self._rebuild_labels_and_markers()
+
+    def clear_support_reactions(self):
+        if not self._reactions_by_point:
+            return
+        self._reactions_by_point = {}
+        self._rebuild_labels_and_markers()
 
     def sync(self, prj: Project, *, full: bool = False):
         """Synchronize the scene with the given project.
@@ -307,6 +318,23 @@ class BeamCanvas(QGraphicsView):
                 self.scene.addItem(c)
                 self._labels.append(c)
 
+            reaction_rows = []
+            r = self._reactions_by_point.get(p.name, {}) if p.name else {}
+            for key in ("FX", "FY", "MZ", "MX"):
+                val = float(r.get(key, 0.0)) if r else 0.0
+                if abs(val) > 1e-9:
+                    reaction_rows.append(f"R{key}={val:.1f}")
+
+            for i, txt in enumerate(reaction_rows):
+                rr = QGraphicsSimpleTextItem(txt)
+                rr.setPos(p.x + 10, -55 - i * 15)
+                rr.setBrush(Qt.GlobalColor.darkBlue)
+                rr.setZValue(12)
+                rr.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                rr.setAcceptHoverEvents(False)
+                self.scene.addItem(rr)
+                self._labels.append(rr)
+
         # Loads (force/moment symbols)
         # Scale by max magnitude in active load case, keep a nice pixel size.
         active_case = self.project.active_load_case
@@ -352,7 +380,6 @@ class BeamCanvas(QGraphicsView):
             return max(24.0, min(70.0, L))
 
         red_pen = QPen(Qt.GlobalColor.red, 2)
-        blue_pen = QPen(Qt.GlobalColor.blue, 2)
         # Important: do NOT fill load symbols (especially moments). When a
         # QGraphicsPathItem has a brush, Qt will fill any enclosed area and a
         # moment arc can easily look like a solid red disk.
@@ -491,7 +518,7 @@ class BeamCanvas(QGraphicsView):
                     # Draw torsion along the beam axis (through node), using
                     # right-hand-rule sign convention:
                     # +MX -> arrows point to +X, -MX -> arrows point to -X.
-                    y = 24.0
+                    y = 0.0
                     ah = 6.0
                     d = 1.0 if ld.value >= 0 else -1.0
                     hx = ah * d
@@ -511,7 +538,7 @@ class BeamCanvas(QGraphicsView):
                     path.lineTo(half - hx, y + ah * 0.7)
 
                     it = QGraphicsPathItem(path)
-                    it.setPen(blue_pen)
+                    it.setPen(red_pen)
                     it.setBrush(no_brush)
                     it.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     it.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -522,7 +549,7 @@ class BeamCanvas(QGraphicsView):
                     self._labels.append(it)
 
                     txt = QGraphicsSimpleTextItem(f"{ld.value:.1f}")
-                    txt.setBrush(Qt.GlobalColor.blue)
+                    txt.setBrush(Qt.GlobalColor.red)
                     txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
                     txt.setPos(p.x + half + 6, y - 18)
