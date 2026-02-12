@@ -68,6 +68,8 @@ class Section:
     Iz: float = 1.0
     J: float = 1.0
     c_z: float = 1.0  # max distance for bending about z (Mz -> stress uses c_z with Iz)
+    Zp: float = 1.0   # plastic section modulus for bending about z
+    shape_factor: float = 1.0  # k = Zp / Ze
 
     # Wizard parameters (for sketch/preview). Units: mm.
     p1: float = 0.0
