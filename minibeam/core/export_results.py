@@ -21,12 +21,10 @@ def export_member_aligned_csv(
     axial: bool = True,
     shear: bool = True,
     moment: bool = True,
-    torsion: bool = True,
     disp_dirs: Sequence[str] = ("UY",),
     rot_dirs: Sequence[str] = ("RZ",),
     shear_dir: str = "Fy",
     moment_dir: str = "Mz",
-    torsion_dir: str = "Mx",
     axial_dir: str = "Fx",
     tol: float = 1e-6,
     eps: float = 1e-9,
@@ -112,18 +110,6 @@ def export_member_aligned_csv(
         member_len=L,
     ) if moment else None
 
-    torsion_sampler = _build_quantity_sampler(
-        mem,
-        quantity="torsion",
-        single_method_names=("torque", "torsion", "moment"),
-        array_method_names=("torque_array", "torsion_array", "moment_array"),
-        mandatory=torsion,
-        x_list=x_list,
-        direction=torsion_dir,
-        combo_name=combo,
-        member_len=L,
-    ) if torsion else None
-
     disp_samplers: Dict[str, Optional[Callable[[float], float]]] = {}
     for d in disp_dirs:
         disp_samplers[d] = _build_quantity_sampler(
@@ -165,7 +151,6 @@ def export_member_aligned_csv(
             "N_axial": float(axial_sampler(x)) if axial_sampler is not None else np.nan,
             "V_shear": float(shear_sampler(x)) if shear_sampler is not None else np.nan,
             "M_bending": float(moment_sampler(x)) if moment_sampler is not None else np.nan,
-            "T_torsion": float(torsion_sampler(x)) if torsion_sampler is not None else np.nan,
         }
 
         for d in disp_dirs:
@@ -178,7 +163,7 @@ def export_member_aligned_csv(
 
         rows.append(row)
 
-    fieldnames = ["x_local", "X", "Y", "Z", "N_axial", "V_shear", "M_bending", "T_torsion", *disp_dirs, *rot_dirs]
+    fieldnames = ["x_local", "X", "Y", "Z", "N_axial", "V_shear", "M_bending", *disp_dirs, *rot_dirs]
     out_path = Path(csv_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -339,7 +324,7 @@ def _pick_method(obj: Any, names: Sequence[str]) -> Optional[Callable[..., Any]]
 
 
 def _raise_missing_interface(member: Any, quantity: str) -> None:
-    keys = ("axial", "shear", "moment", "tor", "tors", "mx", "deflect", "rotation", "disp", "mz", "vy")
+    keys = ("axial", "shear", "moment", "deflect", "rotation", "disp", "mz", "vy")
     candidates = [name for name in dir(member) if any(k in name.lower() for k in keys)]
     candidates_str = ", ".join(sorted(candidates)) if candidates else "<none>"
     raise MemberResultExportError(

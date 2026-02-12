@@ -27,10 +27,13 @@ def validate_project(prj: Project) -> List[ValidationMessage]:
 
     # Stability heuristic (2D planar frame): the structure must resist
     # rigid-body translation in Y and rigid-body rotation about Z.
-    # For 3D mode, leave full stability checks to PyNite and skip the 2D-only heuristic.
-    if getattr(prj, "mode", "2D") == "3D":
-        return msgs
-
+    #
+    # For a 1D beam along the X axis (all nodes at y=0), a single DY support
+    # prevents global Y translation. Rotation can be prevented either by:
+    #   - at least one RZ constraint, OR
+    #   - DY constraints at two (or more) distinct X locations (e.g. two pinned
+    #     supports). This matches typical 2D beam usage: two pinned supports are
+    #     stable without explicitly constraining RZ.
     dy_xs = []
     has_rz = False
     for p in prj.points.values():
