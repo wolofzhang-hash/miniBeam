@@ -232,6 +232,8 @@ class MainWindow(QMainWindow):
             "FBD",
             "Shear V",
             "Moment M",
+            "Torsion T",
+            "Torsion τ",
             "Stress σ",
             "Margin MS",
         ])
@@ -744,6 +746,8 @@ class MainWindow(QMainWindow):
             x = xg - x0
             V = np.asarray(getattr(out, "V", []), dtype=float)[mask]
             M = np.asarray(getattr(out, "M", []), dtype=float)[mask]
+            T = np.asarray(getattr(out, "T", []), dtype=float)[mask]
+            tau_t = np.asarray(getattr(out, "tau_torsion", []), dtype=float)[mask]
             sigma = np.asarray(getattr(out, "sigma", []), dtype=float)[mask]
             margin = np.asarray(getattr(out, "margin", []), dtype=float)[mask]
             dy = np.asarray(getattr(out, "dy_diag", np.zeros_like(xg)), dtype=float)[mask]
@@ -752,7 +756,7 @@ class MainWindow(QMainWindow):
             x = np.array([], dtype=float)
             dy = np.array([], dtype=float)
             rz = np.array([], dtype=float)
-            V = M = sigma = margin = np.array([], dtype=float)
+            V = M = T = tau_t = sigma = margin = np.array([], dtype=float)
 
         import csv
         try:
@@ -760,7 +764,7 @@ class MainWindow(QMainWindow):
                 w = csv.writer(f)
 
                 # Unified table header (avoid duplicated header blocks)
-                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "sigma_Nmm2", "MS"])
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "Rxn_MX_Nmm", "V_N", "M_Nmm", "T_Nmm", "tau_torsion_Nmm2", "sigma_Nmm2", "MS"])
 
                 node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
@@ -775,6 +779,8 @@ class MainWindow(QMainWindow):
                         f"{float(r.get('FX', 0.0)):.9g}",
                         f"{float(r.get('FY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
+                        f"{float(r.get('MX', 0.0)):.9g}",
+                        "",
                         "",
                         "",
                         "",
@@ -797,8 +803,11 @@ class MainWindow(QMainWindow):
                             "",
                             "",
                             "",
+                            "",
                             f"{V[i]:.9g}" if i < len(V) else "",
                             f"{M[i]:.9g}" if i < len(M) else "",
+                            f"{T[i]:.9g}" if i < len(T) else "",
+                            f"{tau_t[i]:.9g}" if i < len(tau_t) else "",
                             f"{sigma[i]:.9g}" if i < len(sigma) else "",
                             f"{margin[i]:.9g}" if i < len(margin) else "",
                         ])
@@ -819,6 +828,7 @@ class MainWindow(QMainWindow):
                             merged_row[6] = row[6]
                             merged_row[7] = row[7]
                             merged_row[8] = row[8]
+                            merged_row[9] = row[9]
                             diag_rows[idx] = merged_row
                         else:
                             diag_rows.append(row)
@@ -992,7 +1002,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Constraint (DX, DY, RZ)")
+        dlg.setWindowTitle("Constraint (DX, DY, RZ, RX)")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1016,6 +1026,7 @@ class MainWindow(QMainWindow):
         dx_en, dx_val = (False, 0.0)
         dy_en, dy_val = (False, 0.0)
         rz_en, rz_val = (False, 0.0)
+        rx_en, rx_val = (False, 0.0)
         if p0:
             if "DX" in p0.constraints:
                 dx_en, dx_val = (p0.constraints["DX"].enabled, p0.constraints["DX"].value)
@@ -1023,10 +1034,13 @@ class MainWindow(QMainWindow):
                 dy_en, dy_val = (p0.constraints["DY"].enabled, p0.constraints["DY"].value)
             if "RZ" in p0.constraints:
                 rz_en, rz_val = (p0.constraints["RZ"].enabled, p0.constraints["RZ"].value)
+            if "RX" in p0.constraints:
+                rx_en, rx_val = (p0.constraints["RX"].enabled, p0.constraints["RX"].value)
 
         cb_dx, sb_dx = mk_row("UX / DX", dx_en, dx_val)
         cb_dy, sb_dy = mk_row("UY / DY", dy_en, dy_val)
         cb_rz, sb_rz = mk_row("RZ", rz_en, rz_val)
+        cb_rx, sb_rx = mk_row("RX (torsion)", rx_en, rx_val)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1057,12 +1071,17 @@ class MainWindow(QMainWindow):
             else:
                 p.constraints.pop("RZ", None)
 
+            if cb_rx.isChecked():
+                p.constraints["RX"] = Constraint(dof="RX", value=float(sb_rx.value()), enabled=True)
+            else:
+                p.constraints.pop("RX", None)
+
         after = self.project.to_dict()
         self._push_snapshot("Edit constraints", before, after)
         self._schedule_refresh()
 
     def edit_nodal_loads_selected(self):
-        """Open a dialog to edit FY and MZ nodal loads for selected point(s) in active load case.
+        """Open a dialog to edit FY, MZ and MX nodal loads for selected point(s) in active load case.
         Loads are unique per (direction, loadcase) and will be overwritten (no duplicates)."""
         pids = self.canvas.selected_point_uids()
         if not pids:
@@ -1071,7 +1090,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Load (FY, MZ)")
+        dlg.setWindowTitle("Load (FY, MZ, MX)")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1096,15 +1115,19 @@ class MainWindow(QMainWindow):
 
         fy_en, fy_val = (False, 0.0)
         mz_en, mz_val = (False, 0.0)
+        mx_en, mx_val = (False, 0.0)
         if p0:
             for ld in p0.nodal_loads:
                 if ld.case == lc and ld.direction == "FY":
                     fy_en, fy_val = (True, ld.value)
                 if ld.case == lc and ld.direction == "MZ":
                     mz_en, mz_val = (True, ld.value)
+                if ld.case == lc and ld.direction == "MX":
+                    mx_en, mx_val = (True, ld.value)
 
         cb_fy, sb_fy = mk_row("FY (N)", fy_en, fy_val)
         cb_mz, sb_mz = mk_row("MZ (N·mm)", mz_en, mz_val)
+        cb_mx, sb_mx = mk_row("MX (N·mm)", mx_en, mx_val)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1121,12 +1144,14 @@ class MainWindow(QMainWindow):
                 continue
 
             # remove existing for this LC
-            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FY", "MZ")]
+            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FY", "MZ", "MX")]
 
             if cb_fy.isChecked():
                 p.nodal_loads.append(NodalLoad(direction="FY", value=float(sb_fy.value()), case=lc))
             if cb_mz.isChecked():
                 p.nodal_loads.append(NodalLoad(direction="MZ", value=float(sb_mz.value()), case=lc))
+            if cb_mx.isChecked():
+                p.nodal_loads.append(NodalLoad(direction="MX", value=float(sb_mx.value()), case=lc))
 
         after = self.project.to_dict()
         self._push_snapshot("Edit loads", before, after)

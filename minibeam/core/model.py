@@ -10,15 +10,15 @@ def _uid() -> str:
 
 @dataclass
 class Constraint:
-    # DOF in PyNite naming: DX, DY, RZ
-    dof: Literal["DX", "DY", "RZ"]
+    # DOF in PyNite naming (Phase-1+): DX, DY, RZ, RX (torsion about beam axis)
+    dof: Literal["DX", "DY", "RZ", "RX"]
     value: float = 0.0
     enabled: bool = True
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming: FY, MZ (Phase-1)
-    direction: Literal["FY", "MZ"]
+    # direction in PyNite naming (Phase-1+): FY, MZ, MX (torsion moment about beam axis)
+    direction: Literal["FY", "MZ", "MX"]
     value: float
     case: str = "LC1"
 

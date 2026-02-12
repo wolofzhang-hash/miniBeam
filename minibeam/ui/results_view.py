@@ -112,6 +112,22 @@ class ResultsView(QWidget):
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
 
+        elif rtype == "Torsion T":
+            xt, yt = _clip(out.x_diag, getattr(out, "T", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xt), yt)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("T (N·mm)")
+            ax.set_title("Torsion / Torque (about X)")
+
+        elif rtype == "Torsion τ":
+            xtau, ytau = _clip(out.x_diag, getattr(out, "tau_torsion", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xtau), ytau)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("tau (N/mm²)")
+            ax.set_title("Torsion Shear Stress (simplified)")
+
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
