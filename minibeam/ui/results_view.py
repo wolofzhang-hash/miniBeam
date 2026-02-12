@@ -230,7 +230,7 @@ class ResultsView(QWidget):
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
             _draw_zero_line()
-            _set_labels("x (mm)", "sigma (MPa)", "Bending Stress sigma = M*c/I")
+            _set_labels("x (mm)", "sigma (MPa)", "Normal Stress sigma = N/A + M*c/(I*k)")
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
@@ -239,7 +239,7 @@ class ResultsView(QWidget):
             ax.plot(_norm(xm2), ym2)
             _draw_zero_line()
             ax.set_ylim(-1, 2)
-            _set_labels("x (mm)", "MS", "Margin of Safety (allow/|sigma|-1)")
+            _set_labels("x (mm)", "MS", "Margin of Safety (plastic-corrected: allow/|sigma|-1)")
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xm2), np.asarray(ym2, dtype=float)
 

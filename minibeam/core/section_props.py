@@ -9,6 +9,8 @@ class SectionProps:
     Iz: float
     J: float
     c_z: float
+    Zp: float
+    shape_factor: float
 
 def rect_solid(b: float, h: float) -> SectionProps:
     # b along z, h along y (for a beam along x; bending about z uses Iz with y distances)
@@ -22,7 +24,11 @@ def rect_solid(b: float, h: float) -> SectionProps:
     beta = c/a
     J = a*c**3*(1/3 - 0.21*beta*(1 - beta**4/12))
     c_z = h/2.0  # for Mz bending in XY plane, stress uses distance in Y, so use h/2
-    return SectionProps(A, Iy, Iz, J, c_z)
+    Ze = Iz / max(c_z, 1e-12)
+    Zp_raw = b*h*h/4.0
+    shape_factor = max(Zp_raw / max(Ze, 1e-12), 1.0)
+    Zp = shape_factor*Ze
+    return SectionProps(A, Iy, Iz, J, c_z, Zp, shape_factor)
 
 def circle_solid(d: float) -> SectionProps:
     r = d/2.0
@@ -30,7 +36,11 @@ def circle_solid(d: float) -> SectionProps:
     I = math.pi*r**4/4.0
     J = math.pi*r**4/2.0
     c_z = r
-    return SectionProps(A, I, I, J, c_z)
+    Ze = I / max(c_z, 1e-12)
+    Zp_raw = 4.0*r**3/3.0
+    shape_factor = max(Zp_raw / max(Ze, 1e-12), 1.0)
+    Zp = shape_factor*Ze
+    return SectionProps(A, I, I, J, c_z, Zp, shape_factor)
 
 def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # Very simplified I-beam about z (bending in XY): use Iz for strong axis with depth h
@@ -52,7 +62,16 @@ def i_section(h: float, bf: float, tf: float, tw: float) -> SectionProps:
     # torsion J: very rough thin-wall approx
     J = 2*(bf*tf**3/3.0) + (h-2*tf)*tw**3/3.0
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    Ze = Iz / max(c_z, 1e-12)
+    a_flange = bf*tf
+    y_flange = h/2.0 - tf/2.0
+    h_web_half = max(h/2.0 - tf, 0.0)
+    a_web_half = tw*h_web_half
+    y_web_half = h_web_half/2.0
+    Zp_raw = 2.0*(a_flange*y_flange + a_web_half*y_web_half)
+    shape_factor = max(Zp_raw / max(Ze, 1e-12), 1.0)
+    Zp = shape_factor*Ze
+    return SectionProps(A, Iy, Iz, J, c_z, Zp, shape_factor)
 
 
 def rect_hollow(b: float, h: float, t: float) -> SectionProps:
@@ -81,7 +100,11 @@ def rect_hollow(b: float, h: float, t: float) -> SectionProps:
     J = 4*(Am**2) / (2*(bm/t) + 2*(hm/t))
 
     c_z = h/2.0
-    return SectionProps(A, Iy, Iz, J, c_z)
+    Ze = Iz / max(c_z, 1e-12)
+    Zp_raw = (b*h*h - bi*hi*hi)/4.0
+    shape_factor = max(Zp_raw / max(Ze, 1e-12), 1.0)
+    Zp = shape_factor*Ze
+    return SectionProps(A, Iy, Iz, J, c_z, Zp, shape_factor)
 
 def circle_hollow(D: float, t: float) -> SectionProps:
     """Hollow circular tube (outer diameter D, wall thickness t)."""
@@ -96,4 +119,8 @@ def circle_hollow(D: float, t: float) -> SectionProps:
     I = math.pi*(R**4 - r**4)/4.0
     J = math.pi*(R**4 - r**4)/2.0
     c_z = R
-    return SectionProps(A, I, I, J, c_z)
+    Ze = I / max(c_z, 1e-12)
+    Zp_raw = 4.0*(R**3 - r**3)/3.0
+    shape_factor = max(Zp_raw / max(Ze, 1e-12), 1.0)
+    Zp = shape_factor*Ze
+    return SectionProps(A, I, I, J, c_z, Zp, shape_factor)

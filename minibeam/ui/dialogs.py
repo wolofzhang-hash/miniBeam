@@ -492,7 +492,7 @@ class SectionManagerDialog(QDialog):
         # preview + computed props
         self.preview = SectionPreview()
         right.addWidget(self.preview)
-        self.lbl_props = QLabel("A= -   Iy= -   Iz= -   J= -")
+        self.lbl_props = QLabel("A= -   Iy= -   Iz= -   J= -   Zp= -   k= -")
         self.lbl_props.setWordWrap(True)
         right.addWidget(self.lbl_props)
 
@@ -578,9 +578,9 @@ class SectionManagerDialog(QDialog):
                 props = circle_hollow(p1, p2)
             else:
                 props = i_section(p1, p2, p3, p4)
-            self.lbl_props.setText(f"A={props.A:.0f} mm²   Iy={props.Iy:.0f} mm⁴   Iz={props.Iz:.0f} mm⁴   J={props.J:.0f} mm⁴")
+            self.lbl_props.setText(f"A={props.A:.0f} mm²   Iy={props.Iy:.0f} mm⁴   Iz={props.Iz:.0f} mm⁴   J={props.J:.0f} mm⁴   Zp={props.Zp:.0f} mm³   k={props.shape_factor:.3f}")
         except Exception:
-            self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -")
+            self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -   Zp= -   k= -")
 
     def _update_hint(self, typ: str):
         param_defs = {
@@ -706,7 +706,7 @@ class SectionManagerDialog(QDialog):
             s = target_sections[uid]
             s.type = typ
             s.name = name
-            s.A, s.Iy, s.Iz, s.J, s.c_z = props.A, props.Iy, props.Iz, props.J, props.c_z
+            s.A, s.Iy, s.Iz, s.J, s.c_z, s.Zp, s.shape_factor = props.A, props.Iy, props.Iz, props.J, props.c_z, props.Zp, props.shape_factor
             s.p1, s.p2, s.p3, s.p4 = float(self.sp1.value()), float(self.sp2.value()), float(self.sp3.value()), float(self.sp4.value())
         else:
             s = Section(
@@ -717,6 +717,8 @@ class SectionManagerDialog(QDialog):
                 Iz=props.Iz,
                 J=props.J,
                 c_z=props.c_z,
+                Zp=props.Zp,
+                shape_factor=props.shape_factor,
                 p1=float(self.sp1.value()),
                 p2=float(self.sp2.value()),
                 p3=float(self.sp3.value()),
@@ -743,6 +745,8 @@ class SectionManagerDialog(QDialog):
             Iz=src.Iz,
             J=src.J,
             c_z=src.c_z,
+            Zp=src.Zp,
+            shape_factor=src.shape_factor,
             p1=src.p1,
             p2=src.p2,
             p3=src.p3,
@@ -771,6 +775,8 @@ class SectionManagerDialog(QDialog):
             Iz=src.Iz,
             J=src.J,
             c_z=src.c_z,
+            Zp=src.Zp,
+            shape_factor=src.shape_factor,
             p1=src.p1,
             p2=src.p2,
             p3=src.p3,
