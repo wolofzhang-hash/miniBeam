@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         form = QFormLayout(gb)
         self.ed_x = QDoubleSpinBox()
         self.ed_x.setRange(-1e9, 1e9)
-        self.ed_x.setDecimals(6)
+        self.ed_x.setDecimals(0)
         # Commit on Enter (editingFinished) instead of moving geometry on every
         # keystroke while typing.
         self.ed_x.setKeyboardTracking(False)
@@ -1081,7 +1081,7 @@ class MainWindow(QMainWindow):
             cb.setChecked(bool(enabled_default))
             sb = QDoubleSpinBox()
             sb.setRange(-1e12, 1e12)
-            sb.setDecimals(6)
+            sb.setDecimals(3)
             sb.setValue(float(value_default))
             roww = QWidget()
             hl = QHBoxLayout(roww)
@@ -1169,7 +1169,7 @@ class MainWindow(QMainWindow):
             cb.setChecked(bool(enabled_default))
             sb = QDoubleSpinBox()
             sb.setRange(-1e12, 1e12)
-            sb.setDecimals(6)
+            sb.setDecimals(0)
             sb.setValue(float(value_default))
             roww = QWidget()
             hl = QHBoxLayout(roww)
@@ -1230,7 +1230,7 @@ class MainWindow(QMainWindow):
         mids = self.canvas.selected_member_uids()
         if not mids:
             return
-        w, ok = QInputDialog.getDouble(self, "UDL", "w (N/mm, +Y upward):", 0.0, -1e12, 1e12, 6)
+        w, ok = QInputDialog.getDouble(self, "UDL", "w (N/mm, +Y upward):", 0.0, -1e12, 1e12, 0)
         if not ok:
             return
         from ..core.model import MemberLoadUDL
