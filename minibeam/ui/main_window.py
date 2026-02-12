@@ -769,7 +769,7 @@ class MainWindow(QMainWindow):
                 w = csv.writer(f)
 
                 # Unified table header (avoid duplicated header blocks)
-                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "rx_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_FZ_N", "Rxn_MX_Nmm", "Rxn_MY_Nmm", "Rxn_MZ_Nmm", "V_N", "M_Nmm", "T_Nmm", "sigma_Nmm2", "tau_Nmm2", "sigma_vm_Nmm2", "MS"])
+                w.writerow(["TYPE", "name", "combo", "x_mm", "dy_mm", "rz_rad", "rx_rad", "Rxn_FX_N", "Rxn_FY_N", "Rxn_MZ_Nmm", "Rxn_MX_Nmm", "V_N", "M_Nmm", "T_Nmm", "sigma_Nmm2", "tau_Nmm2", "sigma_vm_Nmm2", "MS"])
 
                 node_rows = []
                 for i, p in enumerate(pts_sorted, start=1):
@@ -784,10 +784,8 @@ class MainWindow(QMainWindow):
                         "",
                         f"{float(r.get('FX', 0.0)):.9g}",
                         f"{float(r.get('FY', 0.0)):.9g}",
-                        f"{float(r.get('FZ', 0.0)):.9g}",
-                        f"{float(r.get('MX', 0.0)):.9g}",
-                        f"{float(r.get('MY', 0.0)):.9g}",
                         f"{float(r.get('MZ', 0.0)):.9g}",
+                        f"{float(r.get('MX', 0.0)):.9g}",
                         "",
                         "",
                         "",
@@ -811,8 +809,6 @@ class MainWindow(QMainWindow):
                             f"{dy[i]:.9g}",
                             f"{rz[i]:.9g}" if i < len(rz) else "",
                             f"{rx[i]:.9g}" if i < len(rx) else "",
-                            "",
-                            "",
                             "",
                             "",
                             "",
@@ -843,8 +839,6 @@ class MainWindow(QMainWindow):
                             merged_row[8] = row[8]
                             merged_row[9] = row[9]
                             merged_row[10] = row[10]
-                            merged_row[11] = row[11]
-                            merged_row[12] = row[12]
                             diag_rows[idx] = merged_row
                         else:
                             diag_rows.append(row)

@@ -10,15 +10,15 @@ def _uid() -> str:
 
 @dataclass
 class Constraint:
-    # DOF in PyNite naming (subset used by UI, full set used by solver/export)
-    dof: Literal["DX", "DY", "DZ", "RX", "RY", "RZ"]
+    # DOF in PyNite naming: DX, DY, RZ
+    dof: Literal["DX", "DY", "RZ"]
     value: float = 0.0
     enabled: bool = True
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming (full nodal load set)
-    direction: Literal["FX", "FY", "FZ", "MX", "MY", "MZ"]
+    # direction in PyNite naming: FY, MZ, MX
+    direction: Literal["FY", "MZ", "MX"]
     value: float
     case: str = "LC1"
 
@@ -34,8 +34,6 @@ class Point:
     uid: str = field(default_factory=_uid)
     name: str = ""
     x: float = 0.0  # mm
-    y: float = 0.0  # mm
-    z: float = 0.0  # mm
     constraints: Dict[str, Constraint] = field(default_factory=dict)  # key dof
     nodal_loads: List[NodalLoad] = field(default_factory=list)
 
@@ -86,7 +84,6 @@ class LoadCombo:
 @dataclass
 class Project:
     units: Units = "mm-N-Nmm"
-    mode: Literal["2D", "3D"] = "2D"
     points: Dict[str, Point] = field(default_factory=dict)  # uid->Point
     members: Dict[str, Member] = field(default_factory=dict)  # uid->Member
     materials: Dict[str, Material] = field(default_factory=dict)
@@ -165,7 +162,6 @@ class Project:
         """
         return {
             "units": self.units,
-            "mode": self.mode,
             "active_material_uid": self.active_material_uid,
             "active_section_uid": self.active_section_uid,
             "auto_members": self.auto_members,
@@ -185,7 +181,6 @@ class Project:
         """Restore a project from :meth:`to_dict`."""
         prj = Project()
         prj.units = d.get("units", prj.units)
-        prj.mode = d.get("mode", prj.mode)
         prj.active_material_uid = d.get("active_material_uid")
         prj.active_section_uid = d.get("active_section_uid")
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
@@ -229,7 +224,6 @@ class Project:
         """
         return {
             "units": self.units,
-            "mode": self.mode,
             "active_material_uid": self.active_material_uid,
             "active_section_uid": self.active_section_uid,
             "auto_members": self.auto_members,
@@ -249,7 +243,6 @@ class Project:
         """Restore a project from :meth:`to_dict` output."""
         prj = Project()
         prj.units = d.get("units", prj.units)
-        prj.mode = d.get("mode", prj.mode)
         prj.active_material_uid = d.get("active_material_uid")
         prj.active_section_uid = d.get("active_section_uid")
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
