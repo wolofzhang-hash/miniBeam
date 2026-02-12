@@ -42,6 +42,14 @@ class PointItem(QGraphicsEllipseItem):
         self.setZValue(10)
         self.setPos(x, 0)
 
+    def refresh_style(self):
+        if self.isSelected():
+            self.setBrush(QBrush(QColor("#ffeb3b")))
+            self.setPen(QPen(QColor("#d32f2f"), 2))
+        else:
+            self.setBrush(QBrush(Qt.GlobalColor.white))
+            self.setPen(QPen(Qt.GlobalColor.black, 1))
+
     def itemChange(self, change, value):
         if change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionChange:
             # lock y to 0
@@ -54,6 +62,7 @@ class MemberItem(QGraphicsLineItem):
     def __init__(self, uid: str, x1: float, x2: float):
         super().__init__(x1, 0, x2, 0)
         self.uid = uid
+        self._base_color = QColor(Qt.GlobalColor.black)
         # Make members visually prominent
         self.setPen(QPen(Qt.GlobalColor.black, 3))
         self.setFlag(QGraphicsLineItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -63,7 +72,16 @@ class MemberItem(QGraphicsLineItem):
         q = QColor(color)
         if not q.isValid():
             q = QColor(Qt.GlobalColor.black)
-        self.setPen(QPen(q, 3))
+        self._base_color = q
+        self.refresh_style()
+
+    def refresh_style(self):
+        if self.isSelected():
+            self.setPen(QPen(QColor("#ff9800"), 5))
+            self.setZValue(25)
+        else:
+            self.setPen(QPen(self._base_color, 3))
+            self.setZValue(1)
 
 
 class BeamCanvas(QGraphicsView):
@@ -588,6 +606,10 @@ class BeamCanvas(QGraphicsView):
         self.sync(self.project, full=True)  # type: ignore[arg-type]
 
     def _on_selection_changed(self):
+        for it in self._point_items.values():
+            it.refresh_style()
+        for it in self._member_items.values():
+            it.refresh_style()
         self.selection_changed.emit()
 
     # selection helpers
