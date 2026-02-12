@@ -611,10 +611,31 @@ class BeamCanvas(QGraphicsView):
         self.sync(self.project, full=True)  # type: ignore[arg-type]
 
     def _on_selection_changed(self):
-        for it in self._point_items.values():
-            it.refresh_style()
-        for it in self._member_items.values():
-            it.refresh_style()
+        dead_points: List[str] = []
+        for uid, it in list(self._point_items.items()):
+            if _isdeleted(it):
+                dead_points.append(uid)
+                continue
+            try:
+                it.refresh_style()
+            except RuntimeError:
+                dead_points.append(uid)
+
+        dead_members: List[str] = []
+        for uid, it in list(self._member_items.items()):
+            if _isdeleted(it):
+                dead_members.append(uid)
+                continue
+            try:
+                it.refresh_style()
+            except RuntimeError:
+                dead_members.append(uid)
+
+        for uid in dead_points:
+            self._point_items.pop(uid, None)
+        for uid in dead_members:
+            self._member_items.pop(uid, None)
+
         self.selection_changed.emit()
 
     # selection helpers
