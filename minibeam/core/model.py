@@ -10,22 +10,22 @@ def _uid() -> str:
 
 @dataclass
 class Constraint:
-    # DOF in PyNite naming (Phase-1+): DX, DY, RZ, RX (torsion about beam axis)
-    dof: Literal["DX", "DY", "RZ", "RX"]
+    # DOF in PyNite naming.
+    dof: Literal["DX", "DY", "DZ", "RX", "RY", "RZ"]
     value: float = 0.0
     enabled: bool = True
 
 @dataclass
 class Bush:
-    # directional spring stiffness in PyNite DOF naming: DX, DY, RZ, RX
-    dof: Literal["DX", "DY", "RZ", "RX"]
+    # directional spring stiffness in PyNite DOF naming
+    dof: Literal["DX", "DY", "DZ", "RX", "RY", "RZ"]
     stiffness: float = 0.0
     enabled: bool = True
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming (Phase-1+): FX, FY, MZ, MX (torsion moment about beam axis)
-    direction: Literal["FX", "FY", "MZ", "MX"]
+    # direction in PyNite naming
+    direction: Literal["FX", "FY", "FZ", "MX", "MY", "MZ"]
     value: float
     case: str = "LC1"
 
@@ -94,6 +94,7 @@ class LoadCombo:
 @dataclass
 class Project:
     units: Units = "mm-N-Nmm"
+    spatial_mode: Literal["2D", "3D"] = "2D"
     points: Dict[str, Point] = field(default_factory=dict)  # uid->Point
     members: Dict[str, Member] = field(default_factory=dict)  # uid->Member
     materials: Dict[str, Material] = field(default_factory=dict)
@@ -189,6 +190,7 @@ class Project:
         """
         return {
             "units": self.units,
+            "spatial_mode": self.spatial_mode,
             "auto_members": self.auto_members,
             "load_cases": list(self.load_cases),
             "active_load_case": self.active_load_case,
@@ -206,6 +208,7 @@ class Project:
         """Restore a project from :meth:`to_dict`."""
         prj = Project()
         prj.units = d.get("units", prj.units)
+        prj.spatial_mode = d.get("spatial_mode", prj.spatial_mode)
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)
@@ -247,6 +250,7 @@ class Project:
         """
         return {
             "units": self.units,
+            "spatial_mode": self.spatial_mode,
             "auto_members": self.auto_members,
             "load_cases": list(self.load_cases),
             "active_load_case": self.active_load_case,
@@ -264,6 +268,7 @@ class Project:
         """Restore a project from :meth:`to_dict` output."""
         prj = Project()
         prj.units = d.get("units", prj.units)
+        prj.spatial_mode = d.get("spatial_mode", prj.spatial_mode)
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)
