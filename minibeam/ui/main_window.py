@@ -21,7 +21,7 @@ from ..core.pynite_adapter import solve_with_pynite, PyniteSolverError, SolveOut
 
 from .canvas_view import BeamCanvas
 from .dialogs import MaterialManagerDialog, SectionManagerDialog
-from .results_view import ResultsView
+from .results_view import ResultsView, ResultsGridDialog
 from ..core.undo import UndoStack
 from ..core.library_store import (
     load_builtin_material_library,
@@ -236,7 +236,6 @@ class MainWindow(QMainWindow):
         self.cmb_result_type.addItems([
             "Deflection",
             "Rotation θ",
-            "FBD",
             "Axial N",
             "Shear V",
             "Moment M",
@@ -794,12 +793,10 @@ class MainWindow(QMainWindow):
         if self.last_results is None:
             QMessageBox.information(self, "Results", "还没有结果。请先 Solve。")
             return
-        cmb = getattr(self, "cmb_result_type", None)
-        rtype = cmb.currentText() if cmb is not None else "Deflection"
         sp = getattr(self, "sp_def_scale", None)
         def_scale = float(sp.value()) if sp is not None else 1.0
-        self.results_view.set_data(self.project, self.last_results, rtype, def_scale=def_scale)
-        self.center_stack.setCurrentWidget(self.results_view)
+        dlg = ResultsGridDialog(self.project, self.last_results, def_scale=def_scale, parent=self)
+        dlg.exec()
 
     def back_to_model(self):
         # Return from results to interactive modeling canvas

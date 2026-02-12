@@ -1,8 +1,20 @@
 from __future__ import annotations
-from typing import Optional
+from dataclasses import dataclass
 import numpy as np
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+    QDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QComboBox,
+    QPushButton,
+    QFileDialog,
+    QMessageBox,
+)
+from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -48,10 +60,8 @@ class ResultsView(QWidget):
         self.canvas = FigureCanvas(self.fig)
         lay.addWidget(self.canvas, 1)
 
-    def set_data(self, prj: Project, out: SolveOutput, rtype: str, def_scale: float = 50.0):
-        self.fig.clear()
-        ax = self.fig.add_subplot(111)
-        self.title.setText(f"Results - {rtype} ({out.combo})")
+    @staticmethod
+    def _plot_result_type(ax, prj: Project, out: SolveOutput, rtype: str, def_scale: float = 50.0):
 
         # Normalize x-axis: leftmost point is x=0, limit plots to beam span
         try:
@@ -76,22 +86,10 @@ class ResultsView(QWidget):
         def _draw_zero_line():
             ax.axhline(0, linewidth=1, color="#d3d3d3", linestyle="--")
 
-        if rtype == "FBD":
-            # FBD is rendered on the main UI canvas (with complete support
-            # reactions). Keep this plot intentionally empty.
-            ax.text(
-                0.5,
-                0.5,
-                "FBD is shown on the model canvas\nafter Solve.",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-                fontsize=11,
-                color="#444444",
-            )
-            ax.set_axis_off()
+        x_for_click = np.array([], dtype=float)
+        y_for_click = np.array([], dtype=float)
 
-        elif rtype == "Deflection":
+        if rtype == "Deflection":
             if getattr(out, "x_diag", None) is not None and np.asarray(out.x_diag).size:
                 x, dy_raw = _clip(out.x_diag, out.dy_diag)
                 x = _norm(x)
@@ -106,6 +104,7 @@ class ResultsView(QWidget):
             ax.set_title("Deflection (scaled)")
 
             self._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes))
+            x_for_click, y_for_click = np.asarray(x, dtype=float), np.asarray(dy, dtype=float)
 
         elif rtype == "Rotation θ":
             xr, yr = _clip(out.x_diag, out.rz_diag)
@@ -115,6 +114,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("θz (rad)")
             ax.set_title("Rotation θ (RZ)")
             self._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
 
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
@@ -124,6 +124,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("V (N)")
             ax.set_title("Shear V (Fy)")
             self._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xv), np.asarray(yv, dtype=float)
 
         elif rtype == "Axial N":
             xn, yn = _clip(out.x_diag, getattr(out, "N", np.zeros_like(out.x_diag)))
@@ -133,6 +134,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("N (N)")
             ax.set_title("Axial Force N (Fx)")
             self._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xn), np.asarray(yn, dtype=float)
 
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
@@ -142,6 +144,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
             self._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
 
         elif rtype == "Torsion T":
             xt, yt = _clip(out.x_diag, getattr(out, "T", np.zeros_like(out.x_diag)))
@@ -151,6 +154,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("T (N·mm)")
             ax.set_title("Torsion / Torque (about X)")
             self._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xt), np.asarray(yt, dtype=float)
 
         elif rtype == "Torsion τ":
             xtau, ytau = _clip(out.x_diag, getattr(out, "tau_torsion", np.zeros_like(out.x_diag)))
@@ -160,6 +164,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("tau (MPa)")
             ax.set_title("Torsion Shear Stress (simplified)")
             self._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xtau), np.asarray(ytau, dtype=float)
 
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
@@ -169,6 +174,7 @@ class ResultsView(QWidget):
             ax.set_ylabel("sigma (MPa)")
             ax.set_title("Bending Stress sigma = M*c/I")
             self._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
         elif rtype == "Margin MS":
             xm2, ym2 = _clip(out.x_diag, out.margin)
@@ -179,11 +185,193 @@ class ResultsView(QWidget):
             ax.set_ylabel("MS")
             ax.set_title("Margin of Safety (allow/|sigma|-1)")
             self._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xm2), np.asarray(ym2, dtype=float)
 
-        self.fig.subplots_adjust(left=0.10, right=0.98, bottom=0.12, top=0.90)
-        
         try:
             ax.set_xlim(0, max(0.0, x1 - x0))
         except Exception:
             pass
+
+        return x_for_click, y_for_click
+
+    def set_data(self, prj: Project, out: SolveOutput, rtype: str, def_scale: float = 50.0):
+        self.fig.clear()
+        ax = self.fig.add_subplot(111)
+        self.title.setText(f"Results - {rtype} ({out.combo})")
+        self._plot_result_type(ax, prj, out, rtype, def_scale=def_scale)
+        self.fig.subplots_adjust(left=0.10, right=0.98, bottom=0.12, top=0.90)
         self.canvas.draw()
+
+
+@dataclass
+class PlotSlot:
+    container: QWidget
+    combo: QComboBox
+    fig: Figure
+    canvas: FigureCanvas
+    coord_label: QLabel
+    annotation: object = None
+    x_data: np.ndarray | None = None
+    y_data: np.ndarray | None = None
+
+
+class ResultsGridDialog(QDialog):
+    RESULT_TYPES = [
+        "Deflection",
+        "Rotation θ",
+        "Axial N",
+        "Shear V",
+        "Moment M",
+        "Torsion T",
+        "Torsion τ",
+        "Stress σ",
+        "Margin MS",
+    ]
+
+    LAYOUT_MODES = {
+        "1 x 1": (1, 1),
+        "1 x 2": (1, 2),
+        "2 x 2": (2, 2),
+        "2 x 3": (2, 3),
+        "3 x 3": (3, 3),
+        "4 x 3": (4, 3),
+    }
+
+    def __init__(self, prj: Project, out: SolveOutput, def_scale: float = 1.0, parent=None):
+        super().__init__(parent)
+        self.project = prj
+        self.out = out
+        self.def_scale = def_scale
+        self.setWindowTitle(f"Results Multi-View ({out.combo})")
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.resize(1400, 900)
+
+        root = QVBoxLayout(self)
+        toolbar = QHBoxLayout()
+        root.addLayout(toolbar)
+
+        self.layout_combo = QComboBox()
+        self.layout_combo.addItems(list(self.LAYOUT_MODES.keys()))
+        self.layout_combo.setCurrentText("2 x 2")
+        toolbar.addWidget(QLabel("Layout"))
+        toolbar.addWidget(self.layout_combo)
+
+        self.btn_export_all = QPushButton("Export All Images")
+        toolbar.addWidget(self.btn_export_all)
+        toolbar.addStretch(1)
+
+        self.grid_host = QWidget()
+        self.grid_layout = QGridLayout(self.grid_host)
+        root.addWidget(self.grid_host, 1)
+
+        self.slots: list[PlotSlot] = []
+        self.layout_combo.currentTextChanged.connect(self._rebuild_grid)
+        self.btn_export_all.clicked.connect(self.export_all_images)
+        self._rebuild_grid()
+
+    def _clear_grid(self):
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+        self.slots = []
+
+    def _rebuild_grid(self):
+        self._clear_grid()
+        rows, cols = self.LAYOUT_MODES[self.layout_combo.currentText()]
+        total = rows * cols
+
+        for idx in range(total):
+            panel = QWidget()
+            vbox = QVBoxLayout(panel)
+
+            cmb = QComboBox()
+            cmb.addItem("(Empty)")
+            cmb.addItems(self.RESULT_TYPES)
+            if idx < len(self.RESULT_TYPES):
+                cmb.setCurrentIndex(idx + 1)
+            else:
+                cmb.setCurrentIndex(0)
+            vbox.addWidget(cmb)
+
+            fig = Figure(figsize=(5, 3), dpi=100)
+            canvas = FigureCanvas(fig)
+            vbox.addWidget(canvas, 1)
+
+            coord_label = QLabel("Click curve point to inspect coordinates")
+            vbox.addWidget(coord_label)
+
+            slot = PlotSlot(panel, cmb, fig, canvas, coord_label)
+            cmb.currentTextChanged.connect(lambda _=None, s=slot: self._draw_slot(s))
+            canvas.mpl_connect("button_press_event", lambda event, s=slot: self._on_plot_click(event, s))
+            self.slots.append(slot)
+            self.grid_layout.addWidget(panel, idx // cols, idx % cols)
+
+        for slot in self.slots:
+            self._draw_slot(slot)
+
+    def _draw_slot(self, slot: PlotSlot):
+        slot.fig.clear()
+        ax = slot.fig.add_subplot(111)
+        rtype = slot.combo.currentText()
+        if rtype == "(Empty)":
+            ax.set_axis_off()
+            slot.x_data = np.array([], dtype=float)
+            slot.y_data = np.array([], dtype=float)
+        else:
+            x_data, y_data = ResultsView._plot_result_type(ax, self.project, self.out, rtype, self.def_scale)
+            slot.x_data = np.asarray(x_data, dtype=float)
+            slot.y_data = np.asarray(y_data, dtype=float)
+        slot.coord_label.setText("Click curve point to inspect coordinates")
+        slot.annotation = None
+        slot.fig.tight_layout()
+        slot.canvas.draw_idle()
+
+    def _on_plot_click(self, event, slot: PlotSlot):
+        if event.inaxes is None or slot.x_data is None or slot.y_data is None or slot.x_data.size == 0:
+            return
+        x = float(event.xdata)
+        idx = int(np.argmin(np.abs(slot.x_data - x)))
+        xp = float(slot.x_data[idx])
+        yp = float(slot.y_data[idx])
+        slot.coord_label.setText(f"x={xp:.6g}, y={yp:.6g}")
+
+        if slot.annotation is not None:
+            try:
+                slot.annotation.remove()
+            except Exception:
+                pass
+        slot.annotation = event.inaxes.annotate(
+            f"({xp:.4g}, {yp:.4g})",
+            (xp, yp),
+            textcoords="offset points",
+            xytext=(6, 8),
+            fontsize=8,
+            color="#111111",
+            bbox={"boxstyle": "round,pad=0.2", "fc": "#fff8dc", "ec": "#888888", "alpha": 0.9},
+        )
+        event.inaxes.scatter([xp], [yp], color="#ff0000", s=20, zorder=4)
+        slot.canvas.draw_idle()
+
+    def export_all_images(self):
+        out_dir = QFileDialog.getExistingDirectory(self, "Select export folder")
+        if not out_dir:
+            return
+        import re
+        from pathlib import Path
+
+        saved = 0
+        for idx, slot in enumerate(self.slots, start=1):
+            rtype = slot.combo.currentText()
+            if rtype == "(Empty)":
+                continue
+            safe = re.sub(r"[^a-zA-Z0-9_\-]+", "_", rtype).strip("_")
+            fn = Path(out_dir) / f"result_{idx:02d}_{safe}.png"
+            slot.fig.savefig(fn, dpi=180)
+            saved += 1
+
+        if saved == 0:
+            QMessageBox.information(self, "Export", "No non-empty plots to export.")
+        else:
+            QMessageBox.information(self, "Export", f"Exported {saved} image(s) to\n{out_dir}")
