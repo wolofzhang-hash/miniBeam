@@ -111,6 +111,7 @@ class BeamCanvas(QGraphicsView):
         self._member_items: Dict[str, MemberItem] = {}
         self._labels: List[QGraphicsSimpleTextItem] = []
         self._reactions_by_point: Dict[str, Dict[str, float]] = {}
+        self._read_only_display: bool = False
 
         # Track point positions at mouse-press so we only emit point_moved when
         # a point actually changed X. This prevents a double-click from causing
@@ -195,6 +196,9 @@ class BeamCanvas(QGraphicsView):
 
     def set_mode(self, mode: str):
         self.mode = mode
+
+    def set_read_only_display(self, on: bool):
+        self._read_only_display = bool(on)
 
     def set_project(self, prj: Project):
         self.project = prj
@@ -323,7 +327,10 @@ class BeamCanvas(QGraphicsView):
             self._labels.append(t)
 
             constraint_rows = []
-            if self.view_plane == "XZ":
+            is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
+            if is_3d:
+                dof_rows = [("DX", "UX"), ("DY", "UY"), ("DZ", "UZ"), ("RX", "RX"), ("RY", "RY"), ("RZ", "RZ")]
+            elif self.view_plane == "XZ":
                 dof_rows = [("DX", "UX"), ("DZ", "UZ"), ("RX", "RX"), ("RY", "RY")]
             else:
                 dof_rows = [("DX", "UX"), ("DY", "UY"), ("RX", "RX"), ("RZ", "RZ")]
@@ -331,7 +338,9 @@ class BeamCanvas(QGraphicsView):
                 if dof in p.constraints and p.constraints[dof].enabled:
                     constraint_rows.append(_constraint_text(tag, p.constraints[dof].value))
             bushes = getattr(p, "bushes", {})
-            if self.view_plane == "XZ":
+            if is_3d:
+                bush_rows = [("DX", "KX"), ("DY", "KY"), ("DZ", "KZ"), ("RX", "KRX"), ("RY", "KRY"), ("RZ", "KRZ")]
+            elif self.view_plane == "XZ":
                 bush_rows = [("DX", "KX"), ("DZ", "KZ"), ("RX", "KRX"), ("RY", "KRY")]
             else:
                 bush_rows = [("DX", "KX"), ("DY", "KY"), ("RX", "KRX"), ("RZ", "KRZ")]
@@ -859,6 +868,9 @@ class BeamCanvas(QGraphicsView):
 
     # events
     def mousePressEvent(self, event):
+        if self._read_only_display:
+            event.accept()
+            return
         self.begin_interaction()
         # Keep keyboard focus on canvas after clicking.
         self.setFocus(Qt.FocusReason.MouseFocusReason)
@@ -1020,6 +1032,9 @@ class BeamCanvas(QGraphicsView):
     # implementation to avoid Qt state corruption.
 
     def contextMenuEvent(self, event):
+        if self._read_only_display:
+            event.accept()
+            return
         if getattr(self, '_suppress_context_menu', False):
             self._suppress_context_menu = False
             event.accept()
