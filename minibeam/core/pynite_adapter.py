@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
+import inspect
 import numpy as np
 
 from .model import Project
@@ -31,6 +32,49 @@ class SolveOutput:
 
 class PyniteSolverError(RuntimeError):
     pass
+
+
+def _define_support_spring_if_available(model, node_name: str, dof: str, stiffness: float):
+    """Best-effort compatibility wrapper for PyNite spring support API."""
+    if stiffness <= 0:
+        return
+    fn = getattr(model, "def_support_spring", None)
+    if fn is None:
+        return
+
+    attempts = [
+        lambda: fn(node_name, dof, stiffness),
+        lambda: fn(node_name, dof, stiffness, True),
+        lambda: fn(node_name, dof, stiffness, None),
+    ]
+    for call in attempts:
+        try:
+            call()
+            return
+        except TypeError:
+            continue
+
+    try:
+        sig = inspect.signature(fn)
+        kwargs = {}
+        if "node_name" in sig.parameters:
+            kwargs["node_name"] = node_name
+        if "direction" in sig.parameters:
+            kwargs["direction"] = dof
+        elif "dof" in sig.parameters:
+            kwargs["dof"] = dof
+        if "stiffness" in sig.parameters:
+            kwargs["stiffness"] = stiffness
+        if "k" in sig.parameters:
+            kwargs["k"] = stiffness
+        if "tension_only" in sig.parameters:
+            kwargs["tension_only"] = False
+        if "comp_only" in sig.parameters:
+            kwargs["comp_only"] = False
+        if kwargs:
+            fn(**kwargs)
+    except Exception:
+        return
 
 def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int = 20) -> SolveOutput:
     if FEModel3D is None:
@@ -69,8 +113,14 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
         rx = ("RX" in p.constraints and p.constraints["RX"].enabled)
 
+        bushes = getattr(p, "bushes", {})
+        k_dx = float(getattr(bushes.get("DX"), "stiffness", 0.0)) if getattr(bushes.get("DX"), "enabled", False) else 0.0
+        k_dy = float(getattr(bushes.get("DY"), "stiffness", 0.0)) if getattr(bushes.get("DY"), "enabled", False) else 0.0
+        k_rz = float(getattr(bushes.get("RZ"), "stiffness", 0.0)) if getattr(bushes.get("RZ"), "enabled", False) else 0.0
+        k_rx = float(getattr(bushes.get("RX"), "stiffness", 0.0)) if getattr(bushes.get("RX"), "enabled", False) else 0.0
+
         # If user didn't fix RX anywhere, we fix RX at the first node to remove rigid-body twist.
-        if not any_rx_fixed and idx == 0:
+        if not any_rx_fixed and idx == 0 and k_rx <= 0:
             rx = True
 
         model.def_support(
@@ -82,6 +132,11 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             support_RY=True,
             support_RZ=rz,
         )
+
+        _define_support_spring_if_available(model, p.name, "DX", k_dx)
+        _define_support_spring_if_available(model, p.name, "DY", k_dy)
+        _define_support_spring_if_available(model, p.name, "RZ", k_rz)
+        _define_support_spring_if_available(model, p.name, "RX", k_rx)
 
         if dx and abs(p.constraints["DX"].value) > 0:
             model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
