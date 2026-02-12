@@ -254,6 +254,11 @@ class BeamCanvas(QGraphicsView):
             self._labels.append(t)
 
         # Point labels + markers
+        def _constraint_text(tag: str, value: float) -> str:
+            if abs(float(value)) <= 1e-12:
+                return tag
+            return f"{tag}={float(value):.1f}"
+
         for p in self.project.points.values():
             t = QGraphicsSimpleTextItem(p.name or "")
             t.setPos(p.x - 8, 10)
@@ -264,18 +269,19 @@ class BeamCanvas(QGraphicsView):
             self.scene.addItem(t)
             self._labels.append(t)
 
+            constraint_rows = []
+            if "DX" in p.constraints and p.constraints["DX"].enabled:
+                constraint_rows.append(_constraint_text("UX", p.constraints["DX"].value))
             if "DY" in p.constraints and p.constraints["DY"].enabled:
-                c = QGraphicsSimpleTextItem("UY")
-                c.setPos(p.x - 10, -55)
-                c.setBrush(Qt.GlobalColor.darkRed)
-                c.setZValue(12)
-                c.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                c.setAcceptHoverEvents(False)
-                self.scene.addItem(c)
-                self._labels.append(c)
+                constraint_rows.append(_constraint_text("UY", p.constraints["DY"].value))
             if "RZ" in p.constraints and p.constraints["RZ"].enabled:
-                c = QGraphicsSimpleTextItem("RZ")
-                c.setPos(p.x - 10, -70)
+                constraint_rows.append(_constraint_text("RZ", p.constraints["RZ"].value))
+            if "RX" in p.constraints and p.constraints["RX"].enabled:
+                constraint_rows.append(_constraint_text("RX", p.constraints["RX"].value))
+
+            for i, txt in enumerate(constraint_rows):
+                c = QGraphicsSimpleTextItem(txt)
+                c.setPos(p.x - 16, -55 - i * 15)
                 c.setBrush(Qt.GlobalColor.darkRed)
                 c.setZValue(12)
                 c.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -288,6 +294,7 @@ class BeamCanvas(QGraphicsView):
         active_case = self.project.active_load_case
         max_fy = 0.0
         max_mz = 0.0
+        max_mx = 0.0
         for p in self.project.points.values():
             for ld in p.nodal_loads:
                 if ld.case != active_case:
@@ -296,6 +303,8 @@ class BeamCanvas(QGraphicsView):
                     max_fy = max(max_fy, abs(ld.value))
                 elif ld.direction == "MZ":
                     max_mz = max(max_mz, abs(ld.value))
+                elif ld.direction == "MX":
+                    max_mx = max(max_mx, abs(ld.value))
 
         def fy_len(val: float) -> float:
             if max_fy <= 1e-12:
@@ -308,6 +317,12 @@ class BeamCanvas(QGraphicsView):
                 return 0.0
             R = 22.0 + 28.0 * abs(val) / max_mz
             return max(18.0, min(60.0, R))  # pixels
+
+        def mx_len(val: float) -> float:
+            if max_mx <= 1e-12:
+                return 0.0
+            L = 30.0 + 40.0 * abs(val) / max_mx
+            return max(24.0, min(70.0, L))
 
         red_pen = QPen(Qt.GlobalColor.red, 2)
         # Important: do NOT fill load symbols (especially moments). When a
@@ -376,10 +391,7 @@ class BeamCanvas(QGraphicsView):
                     ang = math.radians(end_angle)
                     ex, ey = R * math.cos(ang), -R * math.sin(ang)
                     # Tangent direction at the end point.
-                    # For user-friendly visualization we want the arrow head to
-                    # point "outward". Depending on Qt's arc angle conventions,
-                    # the raw tangent can be flipped, so we reverse it by pi.
-                    tang = ang + (-math.pi / 2 if cw else math.pi / 2) + math.pi
+                    tang = ang + (-math.pi / 2 if cw else math.pi / 2)
                     ah = 7.0
                     left = tang + math.radians(25)
                     right = tang - math.radians(25)
@@ -404,6 +416,48 @@ class BeamCanvas(QGraphicsView):
                     txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
                     txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
                     txt.setPos(p.x + 8, -30 - R)
+                    txt.setZValue(21)
+                    self.scene.addItem(txt)
+                    self._labels.append(txt)
+
+                elif ld.direction == "MX":
+                    L = mx_len(ld.value)
+                    if L <= 0.5:
+                        continue
+                    half = L / 2.0
+                    y = -40.0
+                    ah = 6.0
+
+                    path = QPainterPath()
+                    path.moveTo(-half, y)
+                    path.lineTo(half, y)
+                    # left arrow head
+                    path.moveTo(-half, y)
+                    path.lineTo(-half + ah, y - ah * 0.7)
+                    path.moveTo(-half, y)
+                    path.lineTo(-half + ah, y + ah * 0.7)
+                    # right arrow head
+                    path.moveTo(half, y)
+                    path.lineTo(half - ah, y - ah * 0.7)
+                    path.moveTo(half, y)
+                    path.lineTo(half - ah, y + ah * 0.7)
+
+                    it = QGraphicsPathItem(path)
+                    it.setPen(red_pen)
+                    it.setBrush(no_brush)
+                    it.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                    it.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                    it.setAcceptHoverEvents(False)
+                    it.setZValue(20)
+                    it.setPos(p.x, 0)
+                    self.scene.addItem(it)
+                    self._labels.append(it)
+
+                    txt = QGraphicsSimpleTextItem(f"{ld.value:.1f}")
+                    txt.setBrush(Qt.GlobalColor.red)
+                    txt.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                    txt.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                    txt.setPos(p.x + half + 6, y - 2)
                     txt.setZValue(21)
                     self.scene.addItem(txt)
                     self._labels.append(txt)
