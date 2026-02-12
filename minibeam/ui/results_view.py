@@ -104,6 +104,14 @@ class ResultsView(QWidget):
             ax.set_ylabel("V (N)")
             ax.set_title("Shear V (Fy)")
 
+        elif rtype == "Axial N":
+            xn, yn = _clip(out.x_diag, getattr(out, "N", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xn), yn)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("N (N)")
+            ax.set_title("Axial Force N (Fx)")
+
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
             ax.plot(_norm(xm), ym)

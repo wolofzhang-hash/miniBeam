@@ -17,8 +17,8 @@ class Constraint:
 
 @dataclass
 class NodalLoad:
-    # direction in PyNite naming (Phase-1+): FY, MZ, MX (torsion moment about beam axis)
-    direction: Literal["FY", "MZ", "MX"]
+    # direction in PyNite naming (Phase-1+): FX, FY, MZ, MX (torsion moment about beam axis)
+    direction: Literal["FX", "FY", "MZ", "MX"]
     value: float
     case: str = "LC1"
 

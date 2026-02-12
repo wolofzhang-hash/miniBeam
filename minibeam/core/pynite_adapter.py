@@ -20,6 +20,7 @@ class SolveOutput:
     x_diag: np.ndarray
     dy_diag: np.ndarray
     rz_diag: np.ndarray
+    N: np.ndarray
     V: np.ndarray
     M: np.ndarray
     T: np.ndarray  # torsion/torque about local x (N·mm)
@@ -133,8 +134,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
 
     # Allowable stress is member-dependent via assigned material.
 
-    # (x0, x1, xg, DY, RZ, V, M, T, sigma, tau_torsion, margin)
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    # (x0, x1, xg, DY, RZ, N, V, M, T, sigma, tau_torsion, margin)
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
 
     for m in mems_sorted:
         mem = (model.members[m.name] if hasattr(model, 'members') else model.Members[m.name])
@@ -142,6 +143,15 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         n = max(21, int(n_samples_per_member))
         xloc, V = _member_array(mem, "shear_array", "Fy", n, combo.name)
         _, M = _member_array(mem, "moment_array", "Mz", n, combo.name)
+        # axial force along local x
+        try:
+            xloc_n, N = _member_array(mem, "axial_array", None, n, combo.name)
+        except Exception:
+            try:
+                xloc_n, N = _member_array(mem, "force_array", "Fx", n, combo.name)
+            except Exception:
+                xloc_n = xloc
+                N = np.zeros_like(np.asarray(xloc, dtype=float))
         # torsion/torque about local x (often exposed as moment_array('Mx') or torque_array)
         try:
             xloc_t, T = _member_array(mem, "moment_array", "Mx", n, combo.name)
@@ -173,8 +183,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         xloc_dy = np.asarray(xloc_dy, dtype=float)
         xloc_rz = np.asarray(xloc_rz, dtype=float)
         xloc_t = np.asarray(xloc_t, dtype=float)
+        xloc_n = np.asarray(xloc_n, dtype=float)
         V = np.asarray(V, dtype=float)
         M = np.asarray(M, dtype=float)
+        N = np.asarray(N, dtype=float)
         T = np.asarray(T, dtype=float)
         DY = np.asarray(DY, dtype=float)
         RZ = np.asarray(RZ, dtype=float)
@@ -202,6 +214,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_local_mm_t = xloc_t * L if xmax_t <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_t
         xg_t = xi + x_local_mm_t
 
+        xmax_n = float(np.max(np.abs(xloc_n))) if xloc_n.size else 0.0
+        x_local_mm_n = xloc_n * L if xmax_n <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_n
+        xg_n = xi + x_local_mm_n
+
         xmax_dy = float(np.max(np.abs(xloc_dy))) if xloc_dy.size else 0.0
         x_local_mm_dy = xloc_dy * L if xmax_dy <= 1.0 + 1e-9 and abs(L) > 1.0 + 1e-9 else xloc_dy
         xg_dy = xi + x_local_mm_dy
@@ -222,6 +238,14 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             T = np.interp(xg, xg_t, T)
         elif xg.size:
             T = np.full_like(xg, T[0] if T.size else 0.0)
+
+        order_n = np.argsort(xg_n)
+        xg_n = xg_n[order_n]
+        N = N[order_n]
+        if xg_n.size >= 2:
+            N = np.interp(xg, xg_n, N)
+        elif xg.size:
+            N = np.full_like(xg, N[0] if N.size else 0.0)
 
         order_dy = np.argsort(xg_dy)
         xg_dy = xg_dy[order_dy]
@@ -244,17 +268,20 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sec = prj.sections[m.section_uid]
         mat = prj.materials[m.material_uid]
         sigma_allow = mat.sigma_y / max(prj.safety_factor, 1e-6)
-        # bending stress sigma = M*c/I (Mz uses Iz & c_z)
-        sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
+        # combined normal stress = axial + bending
+        sigma_axial = np.array(N) / max(sec.A, 1e-12)
+        sigma_bending = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
+        sigma = sigma_axial + sigma_bending
         # torsion shear stress (simplified): tau = T*r/J, use r ~= c_z as a conservative proxy
         r_max = max(getattr(sec, "c_z", 0.0), 1e-9)
         tau_t = np.array(T) * r_max / max(sec.J, 1e-12)
         margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
 
-        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, V, M, T, sigma, tau_t, margin))
+        member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, N, V, M, T, sigma, tau_t, margin))
 
     dy_all = np.zeros_like(x_diag, dtype=float)
     rz_all = np.zeros_like(x_diag, dtype=float)
+    N_all = np.zeros_like(x_diag, dtype=float)
     V_all = np.zeros_like(x_diag, dtype=float)
     M_all = np.zeros_like(x_diag, dtype=float)
     T_all = np.zeros_like(x_diag, dtype=float)
@@ -266,9 +293,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         mdata = _pick_member_curve(member_curves, float(x))
         if mdata is None:
             continue
-        _, _, xg, DY, RZ, V, M, T, sigma, tau_t, margin = mdata
+        _, _, xg, DY, RZ, N, V, M, T, sigma, tau_t, margin = mdata
         dy_all[idx] = np.interp(x, xg, DY)
         rz_all[idx] = np.interp(x, xg, RZ)
+        N_all[idx] = np.interp(x, xg, N)
         V_all[idx] = np.interp(x, xg, V)
         M_all[idx] = np.interp(x, xg, M)
         T_all[idx] = np.interp(x, xg, T)
@@ -284,6 +312,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         x_diag=np.array(x_diag),
         dy_diag=np.array(dy_all),
         rz_diag=np.array(rz_all),
+        N=np.array(N_all),
         V=np.array(V_all),
         M=np.array(M_all),
         T=np.array(T_all),
@@ -305,7 +334,7 @@ def _merge_unique_x(values: List[float], eps: float = 1e-9) -> List[float]:
 
 
 def _pick_member_curve(
-    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     x: float,
     eps: float = 1e-9,
 ):
