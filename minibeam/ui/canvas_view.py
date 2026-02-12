@@ -89,7 +89,8 @@ class BeamCanvas(QGraphicsView):
     point_moved = pyqtSignal(str, float)   # uid, new_x
     point_added = pyqtSignal(float)        # x
     request_delete_selected_points = pyqtSignal()
-    request_edit_constraints = pyqtSignal()  # open DX/DY/RZ dialog
+    request_edit_constraints = pyqtSignal()  # open DX/DY/RZ/RX dialog
+    request_edit_bushes = pyqtSignal()  # open spring stiffness dialog
     request_edit_nodal_loads = pyqtSignal()  # open FY/MZ dialog
     request_edit_member_udl = pyqtSignal()
     background_calibration_ready = pyqtSignal(object, object)  # QPointF, QPointF
@@ -308,6 +309,15 @@ class BeamCanvas(QGraphicsView):
                 constraint_rows.append(_constraint_text("RZ", p.constraints["RZ"].value))
             if "RX" in p.constraints and p.constraints["RX"].enabled:
                 constraint_rows.append(_constraint_text("RX", p.constraints["RX"].value))
+            bushes = getattr(p, "bushes", {})
+            if "DX" in bushes and bushes["DX"].enabled and bushes["DX"].stiffness > 0:
+                constraint_rows.append(f"KX={bushes['DX'].stiffness:.1f}")
+            if "DY" in bushes and bushes["DY"].enabled and bushes["DY"].stiffness > 0:
+                constraint_rows.append(f"KY={bushes['DY'].stiffness:.1f}")
+            if "RZ" in bushes and bushes["RZ"].enabled and bushes["RZ"].stiffness > 0:
+                constraint_rows.append(f"KRZ={bushes['RZ'].stiffness:.1f}")
+            if "RX" in bushes and bushes["RX"].enabled and bushes["RX"].stiffness > 0:
+                constraint_rows.append(f"KRX={bushes['RX'].stiffness:.1f}")
 
             for i, txt in enumerate(constraint_rows):
                 c = QGraphicsSimpleTextItem(txt)
@@ -1022,6 +1032,10 @@ class BeamCanvas(QGraphicsView):
             a_c = QAction("Constraint...", self)
             a_c.triggered.connect(lambda: self.request_edit_constraints.emit())
             menu.addAction(a_c)
+
+            a_b = QAction("Bush...", self)
+            a_b.triggered.connect(lambda: self.request_edit_bushes.emit())
+            menu.addAction(a_b)
 
             a_l = QAction("Load...", self)
             a_l.triggered.connect(lambda: self.request_edit_nodal_loads.emit())

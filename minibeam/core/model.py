@@ -16,6 +16,13 @@ class Constraint:
     enabled: bool = True
 
 @dataclass
+class Bush:
+    # directional spring stiffness in PyNite DOF naming: DX, DY, RZ, RX
+    dof: Literal["DX", "DY", "RZ", "RX"]
+    stiffness: float = 0.0
+    enabled: bool = True
+
+@dataclass
 class NodalLoad:
     # direction in PyNite naming (Phase-1+): FX, FY, MZ, MX (torsion moment about beam axis)
     direction: Literal["FX", "FY", "MZ", "MX"]
@@ -37,6 +44,7 @@ class Point:
     name: str = ""
     x: float = 0.0  # mm
     constraints: Dict[str, Constraint] = field(default_factory=dict)  # key dof
+    bushes: Dict[str, Bush] = field(default_factory=dict)  # key dof
     nodal_loads: List[NodalLoad] = field(default_factory=list)
 
 @dataclass
@@ -144,6 +152,25 @@ class Project:
             return
         
         p.nodal_loads.append(NodalLoad(direction=direction, value=float(value), case=case))
+
+    def set_bush(self, point_uid: str, dof: str, enabled: bool, stiffness: float = 0.0):
+        """Set or clear a bush spring on a point. Unique per DOF."""
+        p = self.points.get(point_uid)
+        if p is None:
+            return
+        if not enabled:
+            p.bushes.pop(dof, None)
+            return
+        p.bushes[dof] = Bush(dof=dof, stiffness=float(stiffness), enabled=True)
+
+    def get_bush(self, point_uid: str, dof: str):
+        p = self.points.get(point_uid)
+        if p is None:
+            return (False, 0.0)
+        b = p.bushes.get(dof)
+        if b is None or not b.enabled:
+            return (False, 0.0)
+        return (True, float(b.stiffness))
 
     def get_nodal_load(self, point_uid: str, direction: str, case: str = "LC1"):
         p = self.points.get(point_uid)
@@ -256,6 +283,7 @@ class Project:
             # Convert nested dataclasses
             pd = dict(pd)
             pd["constraints"] = {k: Constraint(**cd) for k, cd in pd.get("constraints", {}).items()}
+            pd["bushes"] = {k: Bush(**bd) for k, bd in pd.get("bushes", {}).items()}
             pd["nodal_loads"] = [NodalLoad(**ld) for ld in pd.get("nodal_loads", [])]
             prj.points[uid] = Point(**pd)
 

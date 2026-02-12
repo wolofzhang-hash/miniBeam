@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-from ..core.model import Project, Material, Section, Constraint, NodalLoad
+from ..core.model import Project, Material, Section, Constraint, Bush, NodalLoad
 from ..core.section_props import rect_solid, circle_solid, i_section
 from ..core.validation import validate_project
 from ..core.pynite_adapter import solve_with_pynite, PyniteSolverError, SolveOutput
@@ -137,6 +137,7 @@ class MainWindow(QMainWindow):
         self.act_assign_prop = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "Assign Property", self)
 
         self.act_add_dx = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Constraint", self)
+        self.act_add_bush = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Bush", self)
         self.act_add_dy = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Add DY", self)
         self.act_add_rz = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Add RZ", self)
 
@@ -221,7 +222,7 @@ class MainWindow(QMainWindow):
         ])
 
         mk_tab("Constraints & Loads", [
-            mk_group("Constraints", [self.act_add_dx]),
+            mk_group("Constraints", [self.act_add_dx, self.act_add_bush]),
             mk_group("Loads", [self.act_add_fy, self.act_add_udl]),
         ])
 
@@ -331,6 +332,7 @@ class MainWindow(QMainWindow):
         self.act_add_dx.triggered.connect(self.edit_constraints_selected)
         self.act_add_dy.triggered.connect(self.edit_constraints_selected)
         self.act_add_rz.triggered.connect(self.edit_constraints_selected)
+        self.act_add_bush.triggered.connect(self.edit_bushes_selected)
 
         self.act_add_fy.triggered.connect(self.edit_nodal_loads_selected)
         self.act_add_mz.triggered.connect(self.edit_nodal_loads_selected)
@@ -357,6 +359,7 @@ class MainWindow(QMainWindow):
         self.canvas.point_moved.connect(self.on_point_moved)
         self.canvas.background_calibration_ready.connect(self._on_bg_calib_ready)
         self.canvas.request_edit_constraints.connect(self.edit_constraints_selected)
+        self.canvas.request_edit_bushes.connect(self.edit_bushes_selected)
         self.canvas.request_edit_nodal_loads.connect(self.edit_nodal_loads_selected)
         self.canvas.request_edit_member_udl.connect(self.add_udl_to_selected_members)
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
@@ -1150,6 +1153,98 @@ class MainWindow(QMainWindow):
 
         after = self.project.to_dict()
         self._push_snapshot("Edit constraints", before, after)
+        self._schedule_refresh()
+
+    def edit_bushes_selected(self):
+        """Open a dialog to edit DX/DY/RZ/RX bush spring stiffness for selected point(s)."""
+        pids = self.canvas.selected_point_uids()
+        if not pids:
+            return
+
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Bush (DX, DY, RZ, RX)")
+        lay = QVBoxLayout(dlg)
+        form = QFormLayout()
+        lay.addLayout(form)
+
+        def mk_row(label, enabled_default=False, value_default=0.0):
+            cb = QCheckBox("Enable")
+            cb.setChecked(bool(enabled_default))
+            sb = QDoubleSpinBox()
+            sb.setRange(0.0, 1e15)
+            sb.setDecimals(3)
+            sb.setValue(max(0.0, float(value_default)))
+            roww = QWidget()
+            hl = QHBoxLayout(roww)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.addWidget(cb)
+            hl.addWidget(sb, 1)
+            form.addRow(label, roww)
+            return cb, sb
+
+        p0 = self.project.points.get(pids[0])
+        dx_en, dx_k = (False, 0.0)
+        dy_en, dy_k = (False, 0.0)
+        rz_en, rz_k = (False, 0.0)
+        rx_en, rx_k = (False, 0.0)
+        if p0:
+            bushes = getattr(p0, "bushes", {})
+            if "DX" in bushes:
+                dx_en, dx_k = (bushes["DX"].enabled, bushes["DX"].stiffness)
+            if "DY" in bushes:
+                dy_en, dy_k = (bushes["DY"].enabled, bushes["DY"].stiffness)
+            if "RZ" in bushes:
+                rz_en, rz_k = (bushes["RZ"].enabled, bushes["RZ"].stiffness)
+            if "RX" in bushes:
+                rx_en, rx_k = (bushes["RX"].enabled, bushes["RX"].stiffness)
+
+        cb_dx, sb_dx = mk_row("KX / DX", dx_en, dx_k)
+        cb_dy, sb_dy = mk_row("KY / DY", dy_en, dy_k)
+        cb_rz, sb_rz = mk_row("KRZ", rz_en, rz_k)
+        cb_rx, sb_rx = mk_row("KRX", rx_en, rx_k)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        before = self.project.to_dict()
+        for uid in pids:
+            p = self.project.points.get(uid)
+            if not p:
+                continue
+            bushes = getattr(p, "bushes", None)
+            if bushes is None:
+                p.bushes = {}
+                bushes = p.bushes
+
+            if cb_dx.isChecked() and sb_dx.value() > 0:
+                bushes["DX"] = Bush(dof="DX", stiffness=float(sb_dx.value()), enabled=True)
+            else:
+                bushes.pop("DX", None)
+
+            if cb_dy.isChecked() and sb_dy.value() > 0:
+                bushes["DY"] = Bush(dof="DY", stiffness=float(sb_dy.value()), enabled=True)
+            else:
+                bushes.pop("DY", None)
+
+            if cb_rz.isChecked() and sb_rz.value() > 0:
+                bushes["RZ"] = Bush(dof="RZ", stiffness=float(sb_rz.value()), enabled=True)
+            else:
+                bushes.pop("RZ", None)
+
+            if cb_rx.isChecked() and sb_rx.value() > 0:
+                bushes["RX"] = Bush(dof="RX", stiffness=float(sb_rx.value()), enabled=True)
+            else:
+                bushes.pop("RX", None)
+
+        after = self.project.to_dict()
+        self._push_snapshot("Edit bushes", before, after)
         self._schedule_refresh()
 
     def edit_nodal_loads_selected(self):

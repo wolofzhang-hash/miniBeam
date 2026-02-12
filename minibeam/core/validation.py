@@ -38,13 +38,16 @@ def validate_project(prj: Project) -> List[ValidationMessage]:
     has_rz = False
     for p in prj.points.values():
         c = p.constraints
-        if c.get("DY") is not None and c["DY"].enabled:
+        b = getattr(p, "bushes", {})
+        has_dy = (c.get("DY") is not None and c["DY"].enabled) or (b.get("DY") is not None and b["DY"].enabled and b["DY"].stiffness > 0)
+        has_rz_here = (c.get("RZ") is not None and c["RZ"].enabled) or (b.get("RZ") is not None and b["RZ"].enabled and b["RZ"].stiffness > 0)
+        if has_dy:
             dy_xs.append(float(p.x))
-        if c.get("RZ") is not None and c["RZ"].enabled:
+        if has_rz_here:
             has_rz = True
 
     if len(dy_xs) == 0:
-        msgs.append(ValidationMessage("ERROR", "模型缺少 UY(DY) 约束，可能整体漂移。"))
+        msgs.append(ValidationMessage("ERROR", "模型缺少 UY(DY) 约束/弹簧，可能整体漂移。"))
     else:
         # rotation check
         rot_ok = has_rz
@@ -53,6 +56,6 @@ def validate_project(prj: Project) -> List[ValidationMessage]:
             dy_xs_sorted = sorted(set(round(x, 9) for x in dy_xs))
             rot_ok = len(dy_xs_sorted) >= 2
         if not rot_ok:
-            msgs.append(ValidationMessage("WARN", "模型可能欠约束：建议至少两个不同位置的 UY(DY) 约束，或在某个点锁定 RZ。"))
+            msgs.append(ValidationMessage("WARN", "模型可能欠约束：建议至少两个不同位置的 UY(DY) 约束/弹簧，或在某个点锁定 RZ（约束或弹簧）。"))
 
     return msgs
