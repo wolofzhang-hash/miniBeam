@@ -348,6 +348,7 @@ class BeamCanvas(QGraphicsView):
                 if dof in bushes and bushes[dof].enabled and bushes[dof].stiffness > 0:
                     constraint_rows.append(f"{tag}={bushes[dof].stiffness:.1f}")
 
+            max_constraint_label_w = 0.0
             for i, txt in enumerate(constraint_rows):
                 c = QGraphicsSimpleTextItem(txt)
                 c.setPos(p.x - 16, -55 - i * 15)
@@ -357,6 +358,7 @@ class BeamCanvas(QGraphicsView):
                 c.setAcceptHoverEvents(False)
                 self.scene.addItem(c)
                 self._labels.append(c)
+                max_constraint_label_w = max(max_constraint_label_w, c.boundingRect().width())
 
             reaction_rows = []
             r = self._reactions_by_point.get(p.name, {}) if p.name else {}
@@ -366,9 +368,10 @@ class BeamCanvas(QGraphicsView):
                 if abs(val) > 1e-9:
                     reaction_rows.append(f"R{key}={val:.1f}")
 
+            reaction_x = p.x + max(10.0, max_constraint_label_w + 8.0)
             for i, txt in enumerate(reaction_rows):
                 rr = QGraphicsSimpleTextItem(txt)
-                rr.setPos(p.x + 10, -55 - i * 15)
+                rr.setPos(reaction_x, -55 - i * 15)
                 rr.setBrush(Qt.GlobalColor.darkBlue)
                 rr.setZValue(12)
                 rr.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
