@@ -117,6 +117,28 @@ class ResultsView(QWidget):
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
 
+        elif rtype == "Deflection Z":
+            x, dz_raw = _clip(out.x_diag, getattr(out, "dz_diag", np.zeros_like(out.x_diag)))
+            x = _norm(x)
+            dz = np.asarray(dz_raw, dtype=float) * def_scale
+            ax.plot(x, dz)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel(f"DZ x{def_scale:g} (mm)")
+            ax.set_title("Deflection Z (scaled)")
+            ResultsView._annotate_extrema_and_nodes(ax, x, dz, _norm(out.x_nodes))
+            x_for_click, y_for_click = np.asarray(x, dtype=float), np.asarray(dz, dtype=float)
+
+        elif rtype == "Rotation Y":
+            xr, yr = _clip(out.x_diag, getattr(out, "ry_diag", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xr), yr)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("θy (rad)")
+            ax.set_title("Rotation θ (RY)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
+
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
             ax.plot(_norm(xv), yv)
@@ -137,6 +159,16 @@ class ResultsView(QWidget):
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xn), np.asarray(yn, dtype=float)
 
+        elif rtype == "Shear Vz":
+            xv, yv = _clip(out.x_diag, getattr(out, "Vz", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xv), yv)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("Vz (N)")
+            ax.set_title("Shear Vz (Fz)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xv), np.asarray(yv, dtype=float)
+
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
             ax.plot(_norm(xm), ym)
@@ -144,6 +176,16 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
+            x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
+
+        elif rtype == "Moment My":
+            xm, ym = _clip(out.x_diag, getattr(out, "My", np.zeros_like(out.x_diag)))
+            ax.plot(_norm(xm), ym)
+            _draw_zero_line()
+            ax.set_xlabel("x (mm)")
+            ax.set_ylabel("My (N·mm)")
+            ax.set_title("Moment My")
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
 
@@ -220,9 +262,13 @@ class ResultsGridDialog(QDialog):
     RESULT_TYPES = [
         "Deflection",
         "Rotation θ",
+        "Deflection Z",
+        "Rotation Y",
         "Axial N",
         "Shear V",
+        "Shear Vz",
         "Moment M",
+        "Moment My",
         "Torsion T",
         "Torsion τ",
         "Stress σ",

@@ -94,8 +94,9 @@ class BeamCanvas(QGraphicsView):
     request_edit_nodal_loads = pyqtSignal()  # open FY/MZ dialog
     request_edit_member_udl = pyqtSignal()
     background_calibration_ready = pyqtSignal(object, object)  # QPointF, QPointF
+    view_state_changed = pyqtSignal(object)
 
-    def __init__(self):
+    def __init__(self, view_plane: str = "XY"):
         super().__init__()
         from PyQt6.QtGui import QPainter
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -104,6 +105,7 @@ class BeamCanvas(QGraphicsView):
         self.setSceneRect(-200, -200, 2000, 200)
 
         self.project: Optional[Project] = None
+        self.view_plane: str = view_plane if view_plane in ("XY", "XZ") else "XY"
         self.mode: str = "select"
         self._point_items: Dict[str, PointItem] = {}
         self._member_items: Dict[str, MemberItem] = {}
@@ -161,6 +163,26 @@ class BeamCanvas(QGraphicsView):
         # Connect once. Re-connecting on every redraw can lead to duplicated
         # signals (and in rare cases crashes when combined with scene clears).
         self.scene.selectionChanged.connect(self._on_selection_changed)
+
+    def set_view_plane(self, view_plane: str):
+        self.view_plane = view_plane if view_plane in ("XY", "XZ") else "XY"
+        self.viewport().update()
+
+    def get_view_state(self) -> dict:
+        return {
+            "transform": QTransform(self.transform()),
+            "h": int(self.horizontalScrollBar().value()),
+            "v": int(self.verticalScrollBar().value()),
+        }
+
+    def apply_view_state(self, state: dict):
+        t = state.get("transform")
+        if isinstance(t, QTransform):
+            self.setTransform(QTransform(t), combine=False)
+        if "h" in state:
+            self.horizontalScrollBar().setValue(int(state["h"]))
+        if "v" in state:
+            self.verticalScrollBar().setValue(int(state["v"]))
 
     def begin_interaction(self):
         self._interaction_depth += 1
@@ -301,23 +323,21 @@ class BeamCanvas(QGraphicsView):
             self._labels.append(t)
 
             constraint_rows = []
-            if "DX" in p.constraints and p.constraints["DX"].enabled:
-                constraint_rows.append(_constraint_text("UX", p.constraints["DX"].value))
-            if "DY" in p.constraints and p.constraints["DY"].enabled:
-                constraint_rows.append(_constraint_text("UY", p.constraints["DY"].value))
-            if "RZ" in p.constraints and p.constraints["RZ"].enabled:
-                constraint_rows.append(_constraint_text("RZ", p.constraints["RZ"].value))
-            if "RX" in p.constraints and p.constraints["RX"].enabled:
-                constraint_rows.append(_constraint_text("RX", p.constraints["RX"].value))
+            if self.view_plane == "XZ":
+                dof_rows = [("DX", "UX"), ("DZ", "UZ"), ("RX", "RX"), ("RY", "RY")]
+            else:
+                dof_rows = [("DX", "UX"), ("DY", "UY"), ("RX", "RX"), ("RZ", "RZ")]
+            for dof, tag in dof_rows:
+                if dof in p.constraints and p.constraints[dof].enabled:
+                    constraint_rows.append(_constraint_text(tag, p.constraints[dof].value))
             bushes = getattr(p, "bushes", {})
-            if "DX" in bushes and bushes["DX"].enabled and bushes["DX"].stiffness > 0:
-                constraint_rows.append(f"KX={bushes['DX'].stiffness:.1f}")
-            if "DY" in bushes and bushes["DY"].enabled and bushes["DY"].stiffness > 0:
-                constraint_rows.append(f"KY={bushes['DY'].stiffness:.1f}")
-            if "RZ" in bushes and bushes["RZ"].enabled and bushes["RZ"].stiffness > 0:
-                constraint_rows.append(f"KRZ={bushes['RZ'].stiffness:.1f}")
-            if "RX" in bushes and bushes["RX"].enabled and bushes["RX"].stiffness > 0:
-                constraint_rows.append(f"KRX={bushes['RX'].stiffness:.1f}")
+            if self.view_plane == "XZ":
+                bush_rows = [("DX", "KX"), ("DZ", "KZ"), ("RX", "KRX"), ("RY", "KRY")]
+            else:
+                bush_rows = [("DX", "KX"), ("DY", "KY"), ("RX", "KRX"), ("RZ", "KRZ")]
+            for dof, tag in bush_rows:
+                if dof in bushes and bushes[dof].enabled and bushes[dof].stiffness > 0:
+                    constraint_rows.append(f"{tag}={bushes[dof].stiffness:.1f}")
 
             for i, txt in enumerate(constraint_rows):
                 c = QGraphicsSimpleTextItem(txt)
@@ -331,7 +351,8 @@ class BeamCanvas(QGraphicsView):
 
             reaction_rows = []
             r = self._reactions_by_point.get(p.name, {}) if p.name else {}
-            for key in ("FX", "FY", "MZ", "MX"):
+            reaction_keys = ("FX", "FZ", "MY", "MX") if self.view_plane == "XZ" else ("FX", "FY", "MZ", "MX")
+            for key in reaction_keys:
                 val = float(r.get(key, 0.0)) if r else 0.0
                 if abs(val) > 1e-9:
                     reaction_rows.append(f"R{key}={val:.1f}")
@@ -406,6 +427,9 @@ class BeamCanvas(QGraphicsView):
 
         # Loads (force/moment symbols)
         # Scale by max magnitude in active load case, keep a nice pixel size.
+        force_dir = "FZ" if self.view_plane == "XZ" else "FY"
+        moment_dir = "MY" if self.view_plane == "XZ" else "MZ"
+
         max_fx = 0.0
         max_fy = 0.0
         max_mz = 0.0
@@ -416,9 +440,9 @@ class BeamCanvas(QGraphicsView):
                     continue
                 if ld.direction == "FX":
                     max_fx = max(max_fx, abs(ld.value))
-                elif ld.direction == "FY":
+                elif ld.direction == force_dir:
                     max_fy = max(max_fy, abs(ld.value))
-                elif ld.direction == "MZ":
+                elif ld.direction == moment_dir:
                     max_mz = max(max_mz, abs(ld.value))
                 elif ld.direction == "MX":
                     max_mx = max(max_mx, abs(ld.value))
@@ -458,7 +482,7 @@ class BeamCanvas(QGraphicsView):
             for ld in p.nodal_loads:
                 if ld.case != active_case:
                     continue
-                if ld.direction == "FY":
+                if ld.direction == force_dir:
                     L = fy_len(ld.value)
                     if L <= 0.5:
                         continue
@@ -531,7 +555,7 @@ class BeamCanvas(QGraphicsView):
                     self.scene.addItem(txt)
                     self._labels.append(txt)
 
-                elif ld.direction == "MZ":
+                elif ld.direction == moment_dir:
                     R = mz_rad(ld.value)
                     if R <= 1.0:
                         continue
@@ -899,6 +923,7 @@ class BeamCanvas(QGraphicsView):
             self._pan_start = event.pos()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self.view_state_changed.emit(self.get_view_state())
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -940,6 +965,7 @@ class BeamCanvas(QGraphicsView):
         factor = 1.15 if delta > 0 else 1 / 1.15
         self._zoom *= factor
         self.scale(factor, factor)
+        self.view_state_changed.emit(self.get_view_state())
         event.accept()
 
     def drawForeground(self, painter, rect):
@@ -955,9 +981,10 @@ class BeamCanvas(QGraphicsView):
         # Axes indicator bottom-left
         ox, oy = 40, h - 40
         painter.drawLine(ox, oy, ox + 60, oy)      # +X
-        painter.drawLine(ox, oy, ox, oy - 60)      # +Y
+        painter.drawLine(ox, oy, ox, oy - 60)      # +vertical axis
         painter.drawText(ox + 64, oy + 4, "X")
-        painter.drawText(ox - 10, oy - 64, "Y")
+        vertical_axis = "Z" if self.view_plane == "XZ" else "Y"
+        painter.drawText(ox - 10, oy - 64, vertical_axis)
 
         # Ruler along bottom (x)
         # Determine tick spacing from current view scale

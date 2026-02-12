@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):
         # a QGraphicsScene in the middle of a mouse event (e.g. drag or double
         # click).
         self._refresh_pending = False
+        self._syncing_canvas_view = False
         self._rebuild_pending = False
         self._reselect_point_uid: str | None = None
 
@@ -256,27 +257,28 @@ class MainWindow(QMainWindow):
         center_layout = QVBoxLayout(center)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(6)
-        self.canvas = BeamCanvas()
+        self.canvas = BeamCanvas(view_plane="XY")
         self.canvas_xz: BeamCanvas | None = None
         if self.project.spatial_mode == "3D":
-            self.canvas_xz = BeamCanvas()
+            self.canvas_xz = BeamCanvas(view_plane="XZ")
             self.canvas_xz.set_mode("readonly")
             self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
             self.canvas_xz.setInteractive(False)
         self.results_view = ResultsView()
         self.center_stack = QStackedWidget()
-        canvas_page = QWidget()
-        canvas_layout = QVBoxLayout(canvas_page)
-        canvas_layout.setContentsMargins(0, 0, 0, 0)
-        canvas_layout.setSpacing(4)
-        canvas_layout.addWidget(QLabel("XY View (editable)"))
-        canvas_layout.addWidget(self.canvas, 1)
+        self.canvas_page = QWidget()
+        self.canvas_layout = QVBoxLayout(self.canvas_page)
+        self.canvas_layout.setContentsMargins(0, 0, 0, 0)
+        self.canvas_layout.setSpacing(4)
+        self.canvas_layout.addWidget(QLabel("XY View (editable)"))
+        self.canvas_layout.addWidget(self.canvas, 1)
+        self.xz_label: QLabel | None = None
         if self.canvas_xz is not None:
-            xz_label = QLabel("XZ View (display only)")
-            xz_label.setStyleSheet("color:#666;")
-            canvas_layout.addWidget(xz_label)
-            canvas_layout.addWidget(self.canvas_xz, 1)
-        self.center_stack.addWidget(canvas_page)
+            self.xz_label = QLabel("XZ View (display only)")
+            self.xz_label.setStyleSheet("color:#666;")
+            self.canvas_layout.addWidget(self.xz_label)
+            self.canvas_layout.addWidget(self.canvas_xz, 1)
+        self.center_stack.addWidget(self.canvas_page)
         self.center_stack.addWidget(self.results_view)
         center_layout.addWidget(self.center_stack, 1)
         splitter.addWidget(center)
@@ -384,7 +386,43 @@ class MainWindow(QMainWindow):
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
         if self.canvas_xz is not None:
             self.canvas_xz.selection_changed.connect(lambda: None)
+            self.canvas.view_state_changed.connect(lambda st: self._sync_canvas_view(self.canvas, self.canvas_xz, st))
+            self.canvas_xz.view_state_changed.connect(lambda st: self._sync_canvas_view(self.canvas_xz, self.canvas, st))
         self.tbl_assign.itemSelectionChanged.connect(self._on_assign_table_selection_changed)
+
+    def _ensure_spatial_views(self):
+        wants_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
+        if wants_3d and self.canvas_xz is None:
+            self.canvas_xz = BeamCanvas(view_plane="XZ")
+            self.canvas_xz.set_mode("readonly")
+            self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
+            self.canvas_xz.setInteractive(False)
+            self.xz_label = QLabel("XZ View (display only)")
+            self.xz_label.setStyleSheet("color:#666;")
+            self.canvas_layout.addWidget(self.xz_label)
+            self.canvas_layout.addWidget(self.canvas_xz, 1)
+            self.canvas_xz.selection_changed.connect(lambda: None)
+            self.canvas.view_state_changed.connect(lambda st: self._sync_canvas_view(self.canvas, self.canvas_xz, st))
+            self.canvas_xz.view_state_changed.connect(lambda st: self._sync_canvas_view(self.canvas_xz, self.canvas, st))
+        elif (not wants_3d) and self.canvas_xz is not None:
+            self.canvas_xz.setParent(None)
+            self.canvas_xz.deleteLater()
+            self.canvas_xz = None
+            if self.xz_label is not None:
+                self.xz_label.setParent(None)
+                self.xz_label.deleteLater()
+                self.xz_label = None
+
+    def _sync_canvas_view(self, source: BeamCanvas, target: BeamCanvas | None, state: dict):
+        if target is None:
+            return
+        if getattr(self, "_syncing_canvas_view", False):
+            return
+        self._syncing_canvas_view = True
+        try:
+            target.apply_view_state(state)
+        finally:
+            self._syncing_canvas_view = False
 
     def _choose_spatial_mode(self, default_mode: str = "2D") -> str:
         dlg = QDialog(self)
@@ -474,6 +512,7 @@ class MainWindow(QMainWindow):
 
     def _do_refresh(self):
         self._refresh_pending = False
+        self._syncing_canvas_view = False
         # Rebuild all UI views from current project state
         self.refresh_all()
         if self._reselect_point_uid:
@@ -1077,9 +1116,8 @@ class MainWindow(QMainWindow):
     def new_project(self):
         # Keep libraries (materials/sections) already loaded; clear model topology.
         chosen_mode = self._choose_spatial_mode(default_mode=self.project.spatial_mode)
-        if chosen_mode != self.project.spatial_mode:
-            QMessageBox.information(self, "提示", "当前会话不允许中途切换 2D/3D 模式，请重启软件后按目标模式新建。")
-            return
+        self.project.spatial_mode = chosen_mode
+        self._ensure_spatial_views()
         self.project.points.clear()
         self.project.members.clear()
         self.project.rebuild_names()
@@ -1110,11 +1148,8 @@ class MainWindow(QMainWindow):
             with open(path, "r", encoding="utf-8") as f:
                 d = json.load(f)
             project = Project.from_dict(d)
-            current_mode = "3D" if self.canvas_xz is not None else "2D"
-            if getattr(project, "spatial_mode", "2D") != current_mode:
-                QMessageBox.warning(self, "Open Failed", "文件的 2D/3D 模式与当前会话不同，请重启软件后按对应模式打开。")
-                return
             self.project = project
+            self._ensure_spatial_views()
             self._merge_libraries_into_project()
             # Re-bind project to canvas
             self.canvas.project = self.project
@@ -1141,7 +1176,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        dof_order = ["DX", "DY", "RZ", "RX"] + (["DZ", "RY"] if is_3d else [])
+        dof_order = ["DX", "DY", "DZ", "RX", "RY", "RZ"] if is_3d else ["DX", "DY", "RZ", "RX"]
         dof_labels = {
             "DX": "UX / DX",
             "DY": "UY / DY",
@@ -1213,7 +1248,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        dof_order = ["DX", "DY", "RZ", "RX"] + (["DZ", "RY"] if is_3d else [])
+        dof_order = ["DX", "DY", "DZ", "RX", "RY", "RZ"] if is_3d else ["DX", "DY", "RZ", "RX"]
         dof_labels = {
             "DX": "KX / DX",
             "DY": "KY / DY",
@@ -1290,7 +1325,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        directions = ["FX", "FY", "MZ", "MX"] + (["FZ", "MY"] if is_3d else [])
+        directions = ["FX", "FY", "FZ", "MX", "MY", "MZ"] if is_3d else ["FX", "FY", "MZ", "MX"]
         direction_labels = {
             "FX": "FX (N)",
             "FY": "FY (N)",
