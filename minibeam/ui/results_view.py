@@ -24,7 +24,8 @@ from ..core.pynite_adapter import SolveOutput
 
 class ResultsView(QWidget):
 
-    def _annotate_extrema_and_nodes(self, ax, x_plot, y_plot, x_nodes_plot=None):
+    @staticmethod
+    def _annotate_extrema_and_nodes(ax, x_plot, y_plot, x_nodes_plot=None):
         x_arr = np.asarray(x_plot, dtype=float)
         y_arr = np.asarray(y_plot, dtype=float)
         if x_arr.size == 0 or y_arr.size == 0:
@@ -103,7 +104,7 @@ class ResultsView(QWidget):
             ax.set_ylabel(f"DY x{def_scale:g} (mm)")
             ax.set_title("Deflection (scaled)")
 
-            self._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes))
             x_for_click, y_for_click = np.asarray(x, dtype=float), np.asarray(dy, dtype=float)
 
         elif rtype == "Rotation θ":
@@ -113,7 +114,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("θz (rad)")
             ax.set_title("Rotation θ (RZ)")
-            self._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
 
         elif rtype == "Shear V":
@@ -123,7 +124,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("V (N)")
             ax.set_title("Shear V (Fy)")
-            self._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xv), np.asarray(yv, dtype=float)
 
         elif rtype == "Axial N":
@@ -133,7 +134,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("N (N)")
             ax.set_title("Axial Force N (Fx)")
-            self._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xn), np.asarray(yn, dtype=float)
 
         elif rtype == "Moment M":
@@ -143,7 +144,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
-            self._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
 
         elif rtype == "Torsion T":
@@ -153,7 +154,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("T (N·mm)")
             ax.set_title("Torsion / Torque (about X)")
-            self._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xt), np.asarray(yt, dtype=float)
 
         elif rtype == "Torsion τ":
@@ -163,7 +164,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("tau (MPa)")
             ax.set_title("Torsion Shear Stress (simplified)")
-            self._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xtau), np.asarray(ytau, dtype=float)
 
         elif rtype == "Stress σ":
@@ -173,7 +174,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("sigma (MPa)")
             ax.set_title("Bending Stress sigma = M*c/I")
-            self._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
         elif rtype == "Margin MS":
@@ -184,7 +185,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("MS")
             ax.set_title("Margin of Safety (allow/|sigma|-1)")
-            self._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes))
             x_for_click, y_for_click = _norm(xm2), np.asarray(ym2, dtype=float)
 
         try:
