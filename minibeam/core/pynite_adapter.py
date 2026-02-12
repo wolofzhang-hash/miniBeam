@@ -102,12 +102,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sec = prj.sections[m.section_uid].name
         model.add_member(m.name, i_node=i, j_node=j, material_name=mat, section_name=sec)
 
-    # Phase-1 is mostly 2D bending, but we also support torsion about X via RX + nodal MX.
-    # To allow torsion, RX must NOT be globally locked.
-    # We still lock DZ and RY for a planar (XY) model.
-    any_rx_fixed = any(("RX" in p.constraints and p.constraints["RX"].enabled) for p in pts_sorted)
+    is_2d_mode = getattr(prj, "spatial_mode", "2D") != "3D"
 
-    for idx, p in enumerate(pts_sorted):
+    for p in pts_sorted:
         dx = ("DX" in p.constraints and p.constraints["DX"].enabled)
         dy = ("DY" in p.constraints and p.constraints["DY"].enabled)
         rz = ("RZ" in p.constraints and p.constraints["RZ"].enabled)
@@ -116,25 +113,29 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         bushes = getattr(p, "bushes", {})
         k_dx = float(getattr(bushes.get("DX"), "stiffness", 0.0)) if getattr(bushes.get("DX"), "enabled", False) else 0.0
         k_dy = float(getattr(bushes.get("DY"), "stiffness", 0.0)) if getattr(bushes.get("DY"), "enabled", False) else 0.0
+        k_dz = float(getattr(bushes.get("DZ"), "stiffness", 0.0)) if getattr(bushes.get("DZ"), "enabled", False) else 0.0
         k_rz = float(getattr(bushes.get("RZ"), "stiffness", 0.0)) if getattr(bushes.get("RZ"), "enabled", False) else 0.0
         k_rx = float(getattr(bushes.get("RX"), "stiffness", 0.0)) if getattr(bushes.get("RX"), "enabled", False) else 0.0
+        k_ry = float(getattr(bushes.get("RY"), "stiffness", 0.0)) if getattr(bushes.get("RY"), "enabled", False) else 0.0
 
-        # If user didn't fix RX anywhere, we fix RX at the first node to remove rigid-body twist.
-        if not any_rx_fixed and idx == 0 and k_rx <= 0:
-            rx = True
+        dz = ("DZ" in p.constraints and p.constraints["DZ"].enabled)
+        ry = ("RY" in p.constraints and p.constraints["RY"].enabled)
 
         model.def_support(
             p.name,
             support_DX=dx,
             support_DY=dy,
-            support_DZ=True,
+            support_DZ=(True if is_2d_mode else dz),
             support_RX=rx,
-            support_RY=True,
+            support_RY=(True if is_2d_mode else ry),
             support_RZ=rz,
         )
 
         _define_support_spring_if_available(model, p.name, "DX", k_dx)
         _define_support_spring_if_available(model, p.name, "DY", k_dy)
+        if not is_2d_mode:
+            _define_support_spring_if_available(model, p.name, "DZ", k_dz)
+            _define_support_spring_if_available(model, p.name, "RY", k_ry)
         _define_support_spring_if_available(model, p.name, "RZ", k_rz)
         _define_support_spring_if_available(model, p.name, "RX", k_rx)
 
@@ -142,10 +143,14 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             model.def_node_disp(p.name, "DX", p.constraints["DX"].value)
         if dy and abs(p.constraints["DY"].value) > 0:
             model.def_node_disp(p.name, "DY", p.constraints["DY"].value)
+        if not is_2d_mode and dz and abs(p.constraints["DZ"].value) > 0:
+            model.def_node_disp(p.name, "DZ", p.constraints["DZ"].value)
         if rz and abs(p.constraints["RZ"].value) > 0:
             model.def_node_disp(p.name, "RZ", p.constraints["RZ"].value)
         if rx and ("RX" in p.constraints) and abs(p.constraints["RX"].value) > 0:
             model.def_node_disp(p.name, "RX", p.constraints["RX"].value)
+        if not is_2d_mode and ry and ("RY" in p.constraints) and abs(p.constraints["RY"].value) > 0:
+            model.def_node_disp(p.name, "RY", p.constraints["RY"].value)
 
     # load combos
     combo = prj.combos[combo_name]

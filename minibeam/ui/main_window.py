@@ -2,7 +2,8 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
     QLabel, QMessageBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem
+    QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem, QDialog,
+    QDialogButtonBox, QRadioButton
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow):
         self._reselect_point_uid: str | None = None
 
         self.project = Project()
+        self.project.spatial_mode = self._choose_spatial_mode(default_mode="2D")
         self.undo_stack = UndoStack()
         self._last_model_mode: str = "add_point"  # Phase-1: only point modeling
         # seed one material & one section
@@ -255,9 +257,26 @@ class MainWindow(QMainWindow):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(6)
         self.canvas = BeamCanvas()
+        self.canvas_xz: BeamCanvas | None = None
+        if self.project.spatial_mode == "3D":
+            self.canvas_xz = BeamCanvas()
+            self.canvas_xz.set_mode("readonly")
+            self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
+            self.canvas_xz.setInteractive(False)
         self.results_view = ResultsView()
         self.center_stack = QStackedWidget()
-        self.center_stack.addWidget(self.canvas)
+        canvas_page = QWidget()
+        canvas_layout = QVBoxLayout(canvas_page)
+        canvas_layout.setContentsMargins(0, 0, 0, 0)
+        canvas_layout.setSpacing(4)
+        canvas_layout.addWidget(QLabel("XY View (editable)"))
+        canvas_layout.addWidget(self.canvas, 1)
+        if self.canvas_xz is not None:
+            xz_label = QLabel("XZ View (display only)")
+            xz_label.setStyleSheet("color:#666;")
+            canvas_layout.addWidget(xz_label)
+            canvas_layout.addWidget(self.canvas_xz, 1)
+        self.center_stack.addWidget(canvas_page)
         self.center_stack.addWidget(self.results_view)
         center_layout.addWidget(self.center_stack, 1)
         splitter.addWidget(center)
@@ -363,7 +382,28 @@ class MainWindow(QMainWindow):
         self.canvas.request_edit_nodal_loads.connect(self.edit_nodal_loads_selected)
         self.canvas.request_edit_member_udl.connect(self.add_udl_to_selected_members)
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
+        if self.canvas_xz is not None:
+            self.canvas_xz.selection_changed.connect(lambda: None)
         self.tbl_assign.itemSelectionChanged.connect(self._on_assign_table_selection_changed)
+
+    def _choose_spatial_mode(self, default_mode: str = "2D") -> str:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("选择建模模式")
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel("请选择项目模式（创建后不可中途切换）："))
+        rb_2d = QRadioButton("2D（仅 XY 视图，平面梁）")
+        rb_3d = QRadioButton("3D（XY 可编辑 + XZ 只读显示，3D frame 自由度）")
+        rb_2d.setChecked(default_mode != "3D")
+        rb_3d.setChecked(default_mode == "3D")
+        lay.addWidget(rb_2d)
+        lay.addWidget(rb_3d)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        lay.addWidget(btns)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return default_mode
+        return "3D" if rb_3d.isChecked() else "2D"
 
 
     def set_model_mode(self, mode: str):
@@ -384,6 +424,8 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(label, before, after)
         self.last_results = None
         self.canvas.clear_support_reactions()
+        if self.canvas_xz is not None:
+            self.canvas_xz.clear_support_reactions()
 
     def undo(self):
         d = self.undo_stack.undo()
@@ -392,6 +434,8 @@ class MainWindow(QMainWindow):
         self.project = Project.from_dict(d)
         self.last_results = None
         self.canvas.clear_support_reactions()
+        if self.canvas_xz is not None:
+            self.canvas_xz.clear_support_reactions()
         self._schedule_refresh()
 
     def redo(self):
@@ -401,6 +445,8 @@ class MainWindow(QMainWindow):
         self.project = Project.from_dict(d)
         self.last_results = None
         self.canvas.clear_support_reactions()
+        if self.canvas_xz is not None:
+            self.canvas_xz.clear_support_reactions()
         self._schedule_refresh()
 
     def repeat_last_model_action(self):
@@ -998,9 +1044,13 @@ class MainWindow(QMainWindow):
         # interactive operations (can hard-crash Qt on Windows).
         try:
             self.canvas.sync(self.project, full=False)
+            if self.canvas_xz is not None:
+                self.canvas_xz.sync(self.project, full=False)
         except Exception:
             # Fallback to a full rebuild if something unexpected happens.
             self.canvas.sync(self.project, full=True)
+            if self.canvas_xz is not None:
+                self.canvas_xz.sync(self.project, full=True)
 
     def refresh_tree(self):
         self.tree.clear()
@@ -1026,11 +1076,17 @@ class MainWindow(QMainWindow):
     # ---------------- File: New/Open/Save (JSON model) ----------------
     def new_project(self):
         # Keep libraries (materials/sections) already loaded; clear model topology.
+        chosen_mode = self._choose_spatial_mode(default_mode=self.project.spatial_mode)
+        if chosen_mode != self.project.spatial_mode:
+            QMessageBox.information(self, "提示", "当前会话不允许中途切换 2D/3D 模式，请重启软件后按目标模式新建。")
+            return
         self.project.points.clear()
         self.project.members.clear()
         self.project.rebuild_names()
         self.last_results = None
         self.canvas.clear_support_reactions()
+        if self.canvas_xz is not None:
+            self.canvas_xz.clear_support_reactions()
         self.undo_stack.clear()
         self._schedule_refresh()
 
@@ -1053,12 +1109,21 @@ class MainWindow(QMainWindow):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 d = json.load(f)
-            self.project = Project.from_dict(d)
+            project = Project.from_dict(d)
+            current_mode = "3D" if self.canvas_xz is not None else "2D"
+            if getattr(project, "spatial_mode", "2D") != current_mode:
+                QMessageBox.warning(self, "Open Failed", "文件的 2D/3D 模式与当前会话不同，请重启软件后按对应模式打开。")
+                return
+            self.project = project
             self._merge_libraries_into_project()
             # Re-bind project to canvas
             self.canvas.project = self.project
+            if self.canvas_xz is not None:
+                self.canvas_xz.project = self.project
             self.last_results = None
             self.canvas.clear_support_reactions()
+            if self.canvas_xz is not None:
+                self.canvas_xz.clear_support_reactions()
             self.undo_stack.clear()
             self._schedule_refresh(full=True)
         except Exception as e:
@@ -1068,16 +1133,26 @@ class MainWindow(QMainWindow):
 
     # ---------------- Constraint / Load editors ----------------
     def edit_constraints_selected(self):
-        """Open a single dialog to edit DX/DY/RZ constraints for selected point(s).
-        Existing constraints are overwritten (no duplicates)."""
+        """Open a single dialog to edit nodal constraints for selected point(s)."""
         pids = self.canvas.selected_point_uids()
         if not pids:
             return
 
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
+        is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
+        dof_order = ["DX", "DY", "RZ", "RX"] + (["DZ", "RY"] if is_3d else [])
+        dof_labels = {
+            "DX": "UX / DX",
+            "DY": "UY / DY",
+            "DZ": "UZ / DZ",
+            "RX": "RX (torsion)",
+            "RY": "RY",
+            "RZ": "RZ",
+        }
+
         dlg = QDialog(self)
-        dlg.setWindowTitle("Constraint (DX, DY, RZ, RX)")
+        dlg.setWindowTitle("Constraint")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1098,24 +1173,12 @@ class MainWindow(QMainWindow):
             return cb, sb
 
         p0 = self.project.points.get(pids[0])
-        dx_en, dx_val = (False, 0.0)
-        dy_en, dy_val = (False, 0.0)
-        rz_en, rz_val = (False, 0.0)
-        rx_en, rx_val = (False, 0.0)
-        if p0:
-            if "DX" in p0.constraints:
-                dx_en, dx_val = (p0.constraints["DX"].enabled, p0.constraints["DX"].value)
-            if "DY" in p0.constraints:
-                dy_en, dy_val = (p0.constraints["DY"].enabled, p0.constraints["DY"].value)
-            if "RZ" in p0.constraints:
-                rz_en, rz_val = (p0.constraints["RZ"].enabled, p0.constraints["RZ"].value)
-            if "RX" in p0.constraints:
-                rx_en, rx_val = (p0.constraints["RX"].enabled, p0.constraints["RX"].value)
-
-        cb_dx, sb_dx = mk_row("UX / DX", dx_en, dx_val)
-        cb_dy, sb_dy = mk_row("UY / DY", dy_en, dy_val)
-        cb_rz, sb_rz = mk_row("RZ", rz_en, rz_val)
-        cb_rx, sb_rx = mk_row("RX (torsion)", rx_en, rx_val)
+        widgets = {}
+        for dof in dof_order:
+            enabled, value = (False, 0.0)
+            if p0 and dof in p0.constraints:
+                enabled, value = (p0.constraints[dof].enabled, p0.constraints[dof].value)
+            widgets[dof] = mk_row(dof_labels[dof], enabled, value)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1130,41 +1193,38 @@ class MainWindow(QMainWindow):
             p = self.project.points.get(uid)
             if not p:
                 continue
-            # overwrite/clear
-            if cb_dx.isChecked():
-                p.constraints["DX"] = Constraint(dof="DX", value=float(sb_dx.value()), enabled=True)
-            else:
-                p.constraints.pop("DX", None)
-
-            if cb_dy.isChecked():
-                p.constraints["DY"] = Constraint(dof="DY", value=float(sb_dy.value()), enabled=True)
-            else:
-                p.constraints.pop("DY", None)
-
-            if cb_rz.isChecked():
-                p.constraints["RZ"] = Constraint(dof="RZ", value=float(sb_rz.value()), enabled=True)
-            else:
-                p.constraints.pop("RZ", None)
-
-            if cb_rx.isChecked():
-                p.constraints["RX"] = Constraint(dof="RX", value=float(sb_rx.value()), enabled=True)
-            else:
-                p.constraints.pop("RX", None)
+            for dof in dof_order:
+                cb, sb = widgets[dof]
+                if cb.isChecked():
+                    p.constraints[dof] = Constraint(dof=dof, value=float(sb.value()), enabled=True)
+                else:
+                    p.constraints.pop(dof, None)
 
         after = self.project.to_dict()
         self._push_snapshot("Edit constraints", before, after)
         self._schedule_refresh()
 
     def edit_bushes_selected(self):
-        """Open a dialog to edit DX/DY/RZ/RX bush spring stiffness for selected point(s)."""
+        """Open a dialog to edit nodal spring stiffness for selected point(s)."""
         pids = self.canvas.selected_point_uids()
         if not pids:
             return
 
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
+        is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
+        dof_order = ["DX", "DY", "RZ", "RX"] + (["DZ", "RY"] if is_3d else [])
+        dof_labels = {
+            "DX": "KX / DX",
+            "DY": "KY / DY",
+            "DZ": "KZ / DZ",
+            "RX": "KRX",
+            "RY": "KRY",
+            "RZ": "KRZ",
+        }
+
         dlg = QDialog(self)
-        dlg.setWindowTitle("Bush (DX, DY, RZ, RX)")
+        dlg.setWindowTitle("Bush")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1185,25 +1245,13 @@ class MainWindow(QMainWindow):
             return cb, sb
 
         p0 = self.project.points.get(pids[0])
-        dx_en, dx_k = (False, 0.0)
-        dy_en, dy_k = (False, 0.0)
-        rz_en, rz_k = (False, 0.0)
-        rx_en, rx_k = (False, 0.0)
-        if p0:
-            bushes = getattr(p0, "bushes", {})
-            if "DX" in bushes:
-                dx_en, dx_k = (bushes["DX"].enabled, bushes["DX"].stiffness)
-            if "DY" in bushes:
-                dy_en, dy_k = (bushes["DY"].enabled, bushes["DY"].stiffness)
-            if "RZ" in bushes:
-                rz_en, rz_k = (bushes["RZ"].enabled, bushes["RZ"].stiffness)
-            if "RX" in bushes:
-                rx_en, rx_k = (bushes["RX"].enabled, bushes["RX"].stiffness)
-
-        cb_dx, sb_dx = mk_row("KX / DX", dx_en, dx_k)
-        cb_dy, sb_dy = mk_row("KY / DY", dy_en, dy_k)
-        cb_rz, sb_rz = mk_row("KRZ", rz_en, rz_k)
-        cb_rx, sb_rx = mk_row("KRX", rx_en, rx_k)
+        widgets = {}
+        bushes0 = getattr(p0, "bushes", {}) if p0 else {}
+        for dof in dof_order:
+            enabled, value = (False, 0.0)
+            if dof in bushes0:
+                enabled, value = (bushes0[dof].enabled, bushes0[dof].stiffness)
+            widgets[dof] = mk_row(dof_labels[dof], enabled, value)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1222,42 +1270,38 @@ class MainWindow(QMainWindow):
             if bushes is None:
                 p.bushes = {}
                 bushes = p.bushes
-
-            if cb_dx.isChecked() and sb_dx.value() > 0:
-                bushes["DX"] = Bush(dof="DX", stiffness=float(sb_dx.value()), enabled=True)
-            else:
-                bushes.pop("DX", None)
-
-            if cb_dy.isChecked() and sb_dy.value() > 0:
-                bushes["DY"] = Bush(dof="DY", stiffness=float(sb_dy.value()), enabled=True)
-            else:
-                bushes.pop("DY", None)
-
-            if cb_rz.isChecked() and sb_rz.value() > 0:
-                bushes["RZ"] = Bush(dof="RZ", stiffness=float(sb_rz.value()), enabled=True)
-            else:
-                bushes.pop("RZ", None)
-
-            if cb_rx.isChecked() and sb_rx.value() > 0:
-                bushes["RX"] = Bush(dof="RX", stiffness=float(sb_rx.value()), enabled=True)
-            else:
-                bushes.pop("RX", None)
+            for dof in dof_order:
+                cb, sb = widgets[dof]
+                if cb.isChecked() and sb.value() > 0:
+                    bushes[dof] = Bush(dof=dof, stiffness=float(sb.value()), enabled=True)
+                else:
+                    bushes.pop(dof, None)
 
         after = self.project.to_dict()
         self._push_snapshot("Edit bushes", before, after)
         self._schedule_refresh()
 
     def edit_nodal_loads_selected(self):
-        """Open a dialog to edit FX/FY, MZ and MX nodal loads for selected point(s) in active load case.
-        Loads are unique per (direction, loadcase) and will be overwritten (no duplicates)."""
+        """Open a dialog to edit nodal loads for selected point(s) in active load case."""
         pids = self.canvas.selected_point_uids()
         if not pids:
             return
 
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
+        is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
+        directions = ["FX", "FY", "MZ", "MX"] + (["FZ", "MY"] if is_3d else [])
+        direction_labels = {
+            "FX": "FX (N)",
+            "FY": "FY (N)",
+            "FZ": "FZ (N)",
+            "MX": "MX (N·mm)",
+            "MY": "MY (N·mm)",
+            "MZ": "MZ (N·mm)",
+        }
+
         dlg = QDialog(self)
-        dlg.setWindowTitle("Load (FX, FY, MZ, MX)")
+        dlg.setWindowTitle("Load")
         lay = QVBoxLayout(dlg)
         form = QFormLayout()
         lay.addLayout(form)
@@ -1279,26 +1323,15 @@ class MainWindow(QMainWindow):
 
         lc = self.project.active_load_case
         p0 = self.project.points.get(pids[0])
-
-        fx_en, fx_val = (False, 0.0)
-        fy_en, fy_val = (False, 0.0)
-        mz_en, mz_val = (False, 0.0)
-        mx_en, mx_val = (False, 0.0)
-        if p0:
-            for ld in p0.nodal_loads:
-                if ld.case == lc and ld.direction == "FX":
-                    fx_en, fx_val = (True, ld.value)
-                if ld.case == lc and ld.direction == "FY":
-                    fy_en, fy_val = (True, ld.value)
-                if ld.case == lc and ld.direction == "MZ":
-                    mz_en, mz_val = (True, ld.value)
-                if ld.case == lc and ld.direction == "MX":
-                    mx_en, mx_val = (True, ld.value)
-
-        cb_fx, sb_fx = mk_row("FX (N)", fx_en, fx_val)
-        cb_fy, sb_fy = mk_row("FY (N)", fy_en, fy_val)
-        cb_mz, sb_mz = mk_row("MZ (N·mm)", mz_en, mz_val)
-        cb_mx, sb_mx = mk_row("MX (N·mm)", mx_en, mx_val)
+        widgets = {}
+        for direction in directions:
+            enabled, value = (False, 0.0)
+            if p0:
+                for ld in p0.nodal_loads:
+                    if ld.case == lc and ld.direction == direction:
+                        enabled, value = (True, ld.value)
+                        break
+            widgets[direction] = mk_row(direction_labels[direction], enabled, value)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dlg.accept)
@@ -1313,22 +1346,16 @@ class MainWindow(QMainWindow):
             p = self.project.points.get(uid)
             if not p:
                 continue
-
-            # remove existing for this LC
-            p.nodal_loads = [ld for ld in p.nodal_loads if ld.case != lc or ld.direction not in ("FX", "FY", "MZ", "MX")]
-
-            if cb_fx.isChecked():
-                p.nodal_loads.append(NodalLoad(direction="FX", value=float(sb_fx.value()), case=lc))
-            if cb_fy.isChecked():
-                p.nodal_loads.append(NodalLoad(direction="FY", value=float(sb_fy.value()), case=lc))
-            if cb_mz.isChecked():
-                p.nodal_loads.append(NodalLoad(direction="MZ", value=float(sb_mz.value()), case=lc))
-            if cb_mx.isChecked():
-                p.nodal_loads.append(NodalLoad(direction="MX", value=float(sb_mx.value()), case=lc))
+            p.nodal_loads = [ld for ld in p.nodal_loads if not (ld.case == lc and ld.direction in directions)]
+            for direction in directions:
+                cb, sb = widgets[direction]
+                if cb.isChecked():
+                    p.nodal_loads.append(NodalLoad(direction=direction, value=float(sb.value()), case=lc))
 
         after = self.project.to_dict()
         self._push_snapshot("Edit loads", before, after)
         self._schedule_refresh()
+
     def add_udl_to_selected_members(self):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QDoubleSpinBox
         mids = self.canvas.selected_member_uids()
