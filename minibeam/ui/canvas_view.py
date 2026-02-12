@@ -579,6 +579,18 @@ class BeamCanvas(QGraphicsView):
         it.setSelected(True)
         QTimer.singleShot(0, self.selection_changed.emit)
 
+    def select_member(self, uid: str):
+        """Select a member item by uid (after redraw)."""
+        it = self._member_items.get(uid)
+        if it is None:
+            return
+        for pit in self._point_items.values():
+            pit.setSelected(False)
+        for mit in self._member_items.values():
+            mit.setSelected(False)
+        it.setSelected(True)
+        QTimer.singleShot(0, self.selection_changed.emit)
+
     # events
     def mousePressEvent(self, event):
         self.begin_interaction()

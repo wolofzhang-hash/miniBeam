@@ -2,10 +2,10 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
     QLabel, QMessageBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem, QCheckBox
+    QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor
 from PyQt6.QtWidgets import QStyle, QFileDialog
 
 import sys
@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
 
         # right: property panel
         self.prop = QWidget()
-        self.prop.setMinimumWidth(320)
+        self.prop.setMinimumWidth(520)
         splitter.addWidget(self.prop)
         pr = QVBoxLayout(self.prop)
         pr.setContentsMargins(6, 6, 6, 6)
@@ -291,16 +291,20 @@ class MainWindow(QMainWindow):
         self.gb_assign = QGroupBox("Assign Property")
         pr.addWidget(self.gb_assign)
         lay_assign = QVBoxLayout(self.gb_assign)
-        self.tbl_assign = QTableWidget(0, 6)
-        self.tbl_assign.setHorizontalHeaderLabels(["Use", "Section ID", "Length", "Material", "Section", "Color"])
+        self.tbl_assign = QTableWidget(0, 5)
+        self.tbl_assign.setHorizontalHeaderLabels(["ID", "Len", "Mat", "Sec", "Clr"])
         self.tbl_assign.verticalHeader().setVisible(False)
         self.tbl_assign.setAlternatingRowColors(True)
+        self.tbl_assign.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.tbl_assign.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.tbl_assign.horizontalHeader().setStretchLastSection(True)
         lay_assign.addWidget(self.tbl_assign)
         self.gb_assign.setVisible(False)
 
         pr.addStretch(1)
 
         splitter.setStretchFactor(1, 1)
+        splitter.setSizes([220, 980, 560])
 
     def _connect(self):
         # --- File ---
@@ -363,6 +367,7 @@ class MainWindow(QMainWindow):
         self.canvas.request_edit_constraints.connect(self.edit_constraints_selected)
         self.canvas.request_edit_nodal_loads.connect(self.edit_nodal_loads_selected)
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
+        self.tbl_assign.itemSelectionChanged.connect(self._on_assign_table_selection_changed)
 
 
     def set_model_mode(self, mode: str):
@@ -585,16 +590,16 @@ class MainWindow(QMainWindow):
         color_items = ["#000000", "#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e"]
 
         mems = sorted(self.project.members.values(), key=lambda m: m.name)
+        selected_member_uid = next(iter(self.canvas.selected_member_uids()), None)
         self.tbl_assign.blockSignals(True)
         self.tbl_assign.setRowCount(len(mems))
         for row, m in enumerate(mems):
-            cb = QCheckBox()
-            cb.setChecked(True)
-            self.tbl_assign.setCellWidget(row, 0, cb)
-            self.tbl_assign.setItem(row, 1, QTableWidgetItem(m.name or m.uid))
+            id_item = QTableWidgetItem(m.name or m.uid)
+            id_item.setData(Qt.ItemDataRole.UserRole, m.uid)
+            self.tbl_assign.setItem(row, 0, id_item)
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
-            self.tbl_assign.setItem(row, 2, QTableWidgetItem(f"{abs(xj-xi):.3f}"))
+            self.tbl_assign.setItem(row, 1, QTableWidgetItem(f"{abs(xj-xi):.3f}"))
 
             cmb_mat = QComboBox()
             for uid, name in mat_items:
@@ -602,7 +607,7 @@ class MainWindow(QMainWindow):
             idx_mat = max(0, cmb_mat.findData(m.material_uid))
             cmb_mat.setCurrentIndex(idx_mat)
             cmb_mat.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
-            self.tbl_assign.setCellWidget(row, 3, cmb_mat)
+            self.tbl_assign.setCellWidget(row, 2, cmb_mat)
 
             cmb_sec = QComboBox()
             for uid, name in sec_items:
@@ -610,28 +615,29 @@ class MainWindow(QMainWindow):
             idx_sec = max(0, cmb_sec.findData(m.section_uid))
             cmb_sec.setCurrentIndex(idx_sec)
             cmb_sec.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
-            self.tbl_assign.setCellWidget(row, 4, cmb_sec)
+            self.tbl_assign.setCellWidget(row, 3, cmb_sec)
 
             cmb_color = QComboBox()
             for c in color_items:
-                cmb_color.addItem(c, c)
+                swatch = QPixmap(18, 18)
+                swatch.fill(QColor(c))
+                cmb_color.addItem(QIcon(swatch), "", c)
             cval = m.color if getattr(m, "color", "") else color_items[0]
             idx_color = max(0, cmb_color.findData(cval))
             cmb_color.setCurrentIndex(idx_color)
             cmb_color.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
-            self.tbl_assign.setCellWidget(row, 5, cmb_color)
+            self.tbl_assign.setCellWidget(row, 4, cmb_color)
+            if selected_member_uid == m.uid:
+                self.tbl_assign.selectRow(row)
         self.tbl_assign.blockSignals(False)
 
     def _on_assign_row_changed(self, member_uid: str, row: int):
         m = self.project.members.get(member_uid)
         if m is None:
             return
-        cb = self.tbl_assign.cellWidget(row, 0)
-        if isinstance(cb, QCheckBox) and not cb.isChecked():
-            return
-        cmb_mat = self.tbl_assign.cellWidget(row, 3)
-        cmb_sec = self.tbl_assign.cellWidget(row, 4)
-        cmb_color = self.tbl_assign.cellWidget(row, 5)
+        cmb_mat = self.tbl_assign.cellWidget(row, 2)
+        cmb_sec = self.tbl_assign.cellWidget(row, 3)
+        cmb_color = self.tbl_assign.cellWidget(row, 4)
         before = self.project.to_dict()
         if isinstance(cmb_mat, QComboBox):
             m.material_uid = cmb_mat.currentData() or ""
@@ -642,6 +648,17 @@ class MainWindow(QMainWindow):
         after = self.project.to_dict()
         self._push_snapshot("Assign Property", before, after)
         self._schedule_refresh()
+
+    def _on_assign_table_selection_changed(self):
+        row = self.tbl_assign.currentRow()
+        if row < 0:
+            return
+        id_item = self.tbl_assign.item(row, 0)
+        if id_item is None:
+            return
+        member_uid = id_item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(member_uid, str) and member_uid in self.project.members:
+            self.canvas.select_member(member_uid)
 
     def apply_constraint_to_selected_points(self):
         pids = self.canvas.selected_point_uids()
@@ -948,6 +965,17 @@ class MainWindow(QMainWindow):
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
             self.lbl_len.setText(f"{abs(xj-xi):.3f} mm")
+
+        if self.gb_assign.isVisible():
+            self.tbl_assign.blockSignals(True)
+            self.tbl_assign.clearSelection()
+            if len(mids) == 1:
+                for row in range(self.tbl_assign.rowCount()):
+                    id_item = self.tbl_assign.item(row, 0)
+                    if id_item is not None and id_item.data(Qt.ItemDataRole.UserRole) == mids[0]:
+                        self.tbl_assign.selectRow(row)
+                        break
+            self.tbl_assign.blockSignals(False)
 
     def _edit_selected_point_x(self, x: float):
         pids = self.canvas.selected_point_uids()
