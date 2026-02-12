@@ -25,7 +25,7 @@ from ..core.pynite_adapter import SolveOutput
 class ResultsView(QWidget):
 
     @staticmethod
-    def _annotate_extrema_and_nodes(ax, x_plot, y_plot, x_nodes_plot=None):
+    def _annotate_extrema_and_nodes(ax, x_plot, y_plot, x_nodes_plot=None, text_scale: float = 1.0):
         x_arr = np.asarray(x_plot, dtype=float)
         y_arr = np.asarray(y_plot, dtype=float)
         if x_arr.size == 0 or y_arr.size == 0:
@@ -34,8 +34,22 @@ class ResultsView(QWidget):
         idx_max = int(np.argmax(y_arr))
         idx_min = int(np.argmin(y_arr))
         ax.scatter([x_arr[idx_max], x_arr[idx_min]], [y_arr[idx_max], y_arr[idx_min]], color="#d62728", s=20, zorder=3)
-        ax.annotate(f"max {y_arr[idx_max]:.3f}", (x_arr[idx_max], y_arr[idx_max]), textcoords="offset points", xytext=(6, 8), fontsize=8)
-        ax.annotate(f"min {y_arr[idx_min]:.3f}", (x_arr[idx_min], y_arr[idx_min]), textcoords="offset points", xytext=(6, -12), fontsize=8)
+        ext_fontsize = max(7, int(round(8 * text_scale)))
+        node_fontsize = max(6, int(round(7 * text_scale)))
+        ax.annotate(
+            f"max {y_arr[idx_max]:.3f}",
+            (x_arr[idx_max], y_arr[idx_max]),
+            textcoords="offset points",
+            xytext=(6, 8),
+            fontsize=ext_fontsize,
+        )
+        ax.annotate(
+            f"min {y_arr[idx_min]:.3f}",
+            (x_arr[idx_min], y_arr[idx_min]),
+            textcoords="offset points",
+            xytext=(6, -12),
+            fontsize=ext_fontsize,
+        )
 
         if x_nodes_plot is None:
             x_nodes_plot = x_arr
@@ -46,7 +60,14 @@ class ResultsView(QWidget):
         y_nodes = np.interp(nodes, x_arr, y_arr)
         ax.scatter(nodes, y_nodes, color="#1f77b4", s=14, zorder=3)
         for xn, yn in zip(nodes, y_nodes):
-            ax.annotate(f"{yn:.3f}", (xn, yn), textcoords="offset points", xytext=(4, 4), fontsize=7, color="#333333")
+            ax.annotate(
+                f"{yn:.3f}",
+                (xn, yn),
+                textcoords="offset points",
+                xytext=(4, 4),
+                fontsize=node_fontsize,
+                color="#333333",
+            )
 
     def __init__(self):
         super().__init__()
@@ -62,7 +83,15 @@ class ResultsView(QWidget):
         lay.addWidget(self.canvas, 1)
 
     @staticmethod
-    def _plot_result_type(ax, prj: Project, out: SolveOutput, rtype: str, def_scale: float = 50.0):
+    def _plot_result_type(
+        ax,
+        prj: Project,
+        out: SolveOutput,
+        rtype: str,
+        def_scale: float = 50.0,
+        include_title: bool = True,
+        text_scale: float = 1.0,
+    ):
 
         # Normalize x-axis: leftmost point is x=0, limit plots to beam span
         try:
@@ -87,6 +116,16 @@ class ResultsView(QWidget):
         def _draw_zero_line():
             ax.axhline(0, linewidth=1, color="#d3d3d3", linestyle="--")
 
+        label_fontsize = max(8, int(round(10 * text_scale)))
+        tick_fontsize = max(7, int(round(9 * text_scale)))
+        title_fontsize = max(10, int(round(14 * text_scale)))
+
+        def _set_labels(xlabel: str, ylabel: str, title: str):
+            ax.set_xlabel(xlabel, fontsize=label_fontsize)
+            ax.set_ylabel(ylabel, fontsize=label_fontsize)
+            if include_title:
+                ax.set_title(title, fontsize=title_fontsize, pad=8)
+
         x_for_click = np.array([], dtype=float)
         y_for_click = np.array([], dtype=float)
 
@@ -100,21 +139,17 @@ class ResultsView(QWidget):
                 dy = np.asarray(out.dy_nodes, dtype=float) * def_scale
             ax.plot(x, dy)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel(f"DY x{def_scale:g} (mm)")
-            ax.set_title("Deflection (scaled)")
+            _set_labels("x (mm)", f"DY x{def_scale:g} (mm)", "Deflection (scaled)")
 
-            ResultsView._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes))
+            ResultsView._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = np.asarray(x, dtype=float), np.asarray(dy, dtype=float)
 
         elif rtype == "Rotation θ":
             xr, yr = _clip(out.x_diag, out.rz_diag)
             ax.plot(_norm(xr), yr)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("θz (rad)")
-            ax.set_title("Rotation θ (RZ)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
+            _set_labels("x (mm)", "θz (rad)", "Rotation θ (RZ)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
 
         elif rtype == "Deflection Z":
@@ -123,100 +158,80 @@ class ResultsView(QWidget):
             dz = np.asarray(dz_raw, dtype=float) * def_scale
             ax.plot(x, dz)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel(f"DZ x{def_scale:g} (mm)")
-            ax.set_title("Deflection Z (scaled)")
-            ResultsView._annotate_extrema_and_nodes(ax, x, dz, _norm(out.x_nodes))
+            _set_labels("x (mm)", f"DZ x{def_scale:g} (mm)", "Deflection Z (scaled)")
+            ResultsView._annotate_extrema_and_nodes(ax, x, dz, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = np.asarray(x, dtype=float), np.asarray(dz, dtype=float)
 
         elif rtype == "Rotation Y":
             xr, yr = _clip(out.x_diag, getattr(out, "ry_diag", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xr), yr)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("θy (rad)")
-            ax.set_title("Rotation θ (RY)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
+            _set_labels("x (mm)", "θy (rad)", "Rotation θ (RY)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xr), np.asarray(yr, dtype=float)
 
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
             ax.plot(_norm(xv), yv)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("V (N)")
-            ax.set_title("Shear V (Fy)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
+            _set_labels("x (mm)", "V (N)", "Shear V (Fy)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xv), np.asarray(yv, dtype=float)
 
         elif rtype == "Axial N":
             xn, yn = _clip(out.x_diag, getattr(out, "N", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xn), yn)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("N (N)")
-            ax.set_title("Axial Force N (Fx)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
+            _set_labels("x (mm)", "N (N)", "Axial Force N (Fx)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xn), np.asarray(yn, dtype=float)
 
         elif rtype == "Shear Vz":
             xv, yv = _clip(out.x_diag, getattr(out, "Vz", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xv), yv)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("Vz (N)")
-            ax.set_title("Shear Vz (Fz)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
+            _set_labels("x (mm)", "Vz (N)", "Shear Vz (Fz)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xv), np.asarray(yv, dtype=float)
 
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
             ax.plot(_norm(xm), ym)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("M (N·mm)")
-            ax.set_title("Moment M (Mz)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
+            _set_labels("x (mm)", "M (N·mm)", "Moment M (Mz)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
 
         elif rtype == "Moment My":
             xm, ym = _clip(out.x_diag, getattr(out, "My", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xm), ym)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("My (N·mm)")
-            ax.set_title("Moment My")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
+            _set_labels("x (mm)", "My (N·mm)", "Moment My")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xm), np.asarray(ym, dtype=float)
 
         elif rtype == "Torsion T":
             xt, yt = _clip(out.x_diag, getattr(out, "T", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xt), yt)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("T (N·mm)")
-            ax.set_title("Torsion / Torque (about X)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes))
+            _set_labels("x (mm)", "T (N·mm)", "Torsion / Torque (about X)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xt), np.asarray(yt, dtype=float)
 
         elif rtype == "Torsion τ":
             xtau, ytau = _clip(out.x_diag, getattr(out, "tau_torsion", np.zeros_like(out.x_diag)))
             ax.plot(_norm(xtau), ytau)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("tau (MPa)")
-            ax.set_title("Torsion Shear Stress (simplified)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes))
+            _set_labels("x (mm)", "tau (MPa)", "Torsion Shear Stress (simplified)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xtau), np.asarray(ytau, dtype=float)
 
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
             _draw_zero_line()
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("sigma (MPa)")
-            ax.set_title("Bending Stress sigma = M*c/I")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes))
+            _set_labels("x (mm)", "sigma (MPa)", "Bending Stress sigma = M*c/I")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
         elif rtype == "Margin MS":
@@ -224,16 +239,15 @@ class ResultsView(QWidget):
             ax.plot(_norm(xm2), ym2)
             _draw_zero_line()
             ax.set_ylim(-1, 2)
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("MS")
-            ax.set_title("Margin of Safety (allow/|sigma|-1)")
-            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes))
+            _set_labels("x (mm)", "MS", "Margin of Safety (allow/|sigma|-1)")
+            ResultsView._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xm2), np.asarray(ym2, dtype=float)
 
         try:
             ax.set_xlim(0, max(0.0, x1 - x0))
         except Exception:
             pass
+        ax.tick_params(axis="both", labelsize=tick_fontsize)
 
         return x_for_click, y_for_click
 
@@ -241,8 +255,8 @@ class ResultsView(QWidget):
         self.fig.clear()
         ax = self.fig.add_subplot(111)
         self.title.setText(f"Results - {rtype} ({out.combo})")
-        self._plot_result_type(ax, prj, out, rtype, def_scale=def_scale)
-        self.fig.subplots_adjust(left=0.10, right=0.98, bottom=0.12, top=0.90)
+        self._plot_result_type(ax, prj, out, rtype, def_scale=def_scale, include_title=False)
+        self.fig.subplots_adjust(left=0.12, right=0.98, bottom=0.16, top=0.96)
         self.canvas.draw()
 
 
@@ -311,6 +325,9 @@ class ResultsGridDialog(QDialog):
 
         self.grid_host = QWidget()
         self.grid_layout = QGridLayout(self.grid_host)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setHorizontalSpacing(8)
+        self.grid_layout.setVerticalSpacing(8)
         root.addWidget(self.grid_host, 1)
 
         self.slots: list[PlotSlot] = []
@@ -357,6 +374,11 @@ class ResultsGridDialog(QDialog):
             self.slots.append(slot)
             self.grid_layout.addWidget(panel, idx // cols, idx % cols)
 
+        for row in range(rows):
+            self.grid_layout.setRowStretch(row, 1)
+        for col in range(cols):
+            self.grid_layout.setColumnStretch(col, 1)
+
         for slot in self.slots:
             self._draw_slot(slot)
 
@@ -369,12 +391,22 @@ class ResultsGridDialog(QDialog):
             slot.x_data = np.array([], dtype=float)
             slot.y_data = np.array([], dtype=float)
         else:
-            x_data, y_data = ResultsView._plot_result_type(ax, self.project, self.out, rtype, self.def_scale)
+            canvas_width = max(420, slot.canvas.width())
+            text_scale = max(0.9, min(1.25, canvas_width / 760.0))
+            x_data, y_data = ResultsView._plot_result_type(
+                ax,
+                self.project,
+                self.out,
+                rtype,
+                self.def_scale,
+                include_title=False,
+                text_scale=text_scale,
+            )
             slot.x_data = np.asarray(x_data, dtype=float)
             slot.y_data = np.asarray(y_data, dtype=float)
         slot.coord_label.setText("Click curve point to inspect coordinates")
         slot.annotation = None
-        slot.fig.tight_layout()
+        slot.fig.subplots_adjust(left=0.12, right=0.98, bottom=0.20, top=0.96)
         slot.canvas.draw_idle()
 
     def _on_plot_click(self, event, slot: PlotSlot):
@@ -417,7 +449,19 @@ class ResultsGridDialog(QDialog):
                 continue
             safe = re.sub(r"[^a-zA-Z0-9_\-]+", "_", rtype).strip("_")
             fn = Path(out_dir) / f"result_{idx:02d}_{safe}.png"
-            slot.fig.savefig(fn, dpi=180)
+            export_fig = Figure(figsize=(7.2, 4.0), dpi=180)
+            export_ax = export_fig.add_subplot(111)
+            ResultsView._plot_result_type(
+                export_ax,
+                self.project,
+                self.out,
+                rtype,
+                self.def_scale,
+                include_title=True,
+                text_scale=1.1,
+            )
+            export_fig.subplots_adjust(left=0.12, right=0.98, bottom=0.16, top=0.90)
+            export_fig.savefig(fn, dpi=180)
             saved += 1
 
         if saved == 0:
