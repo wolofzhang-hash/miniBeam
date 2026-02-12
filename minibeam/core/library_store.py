@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from .model import Material, Section
+from .model import Material, Section, _upgrade_section
 
 
 def _lib_dir() -> Path:
@@ -88,7 +88,7 @@ def load_section_library() -> List[Section]:
         try:
             sd = dict(sd)
             sd.pop("uid", None)
-            out.append(Section(**sd))
+            out.append(_upgrade_section(Section(**sd)))
         except Exception:
             continue
     return out

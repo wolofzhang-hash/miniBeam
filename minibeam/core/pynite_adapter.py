@@ -396,22 +396,33 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         sec = prj.sections[m.section_uid]
         mat = prj.materials[m.material_uid]
         sigma_allow = mat.sigma_y / max(prj.safety_factor, 1e-6)
-        # combined normal stress = axial + bending (with plastic shape-factor correction)
+        # combined stress = axial + biaxial bending + torsion (with plastic corrections)
         sigma_axial = np.array(N) / max(sec.A, 1e-12)
-        sigma_bending = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
-        Ze = max(sec.Iz / max(sec.c_z, 1e-12), 1e-12)
-        Zp = float(getattr(sec, "Zp", 0.0) or 0.0)
-        shape_factor = float(getattr(sec, "shape_factor", 0.0) or 0.0)
-        if shape_factor <= 0 and Zp > 0:
-            shape_factor = Zp / Ze
-        shape_factor = max(shape_factor, 1.0)
-        sigma_elastic = sigma_axial + sigma_bending
-        sigma = sigma_axial + sigma_bending / shape_factor
-        # torsion shear stress (simplified): tau = T*r/J, use r ~= c_z as a conservative proxy
-        r_max = max(getattr(sec, "c_z", 0.0), 1e-9)
-        tau_t = np.array(T) * r_max / max(sec.J, 1e-12)
-        margin_elastic = sigma_allow / np.maximum(np.abs(sigma_elastic), 1e-9) - 1.0
-        margin = sigma_allow / np.maximum(np.abs(sigma), 1e-9) - 1.0
+        c_y = float(getattr(sec, "c_y", getattr(sec, "c_z", 0.0)) or 0.0)
+        c_z = float(getattr(sec, "c_z", c_y) or c_y)
+        sigma_bending_z = np.array(M) * c_z / max(sec.Iz, 1e-12)
+        sigma_bending_y = np.array(My) * c_y / max(sec.Iy, 1e-12)
+
+        k_z = float(getattr(sec, "shape_factor_z", getattr(sec, "shape_factor", 1.0)) or 1.0)
+        k_y = float(getattr(sec, "shape_factor_y", k_z) or k_z)
+        k_t = float(getattr(sec, "shape_factor_t", 1.0) or 1.0)
+        k_z = max(k_z, 1.0)
+        k_y = max(k_y, 1.0)
+        k_t = max(k_t, 1.0)
+
+        sigma_elastic = sigma_axial + sigma_bending_z + sigma_bending_y
+        sigma = sigma_axial + sigma_bending_z / k_z + sigma_bending_y / k_y
+
+        # torsion shear stress (simplified): tau = T*r/J, use max(cy, cz) as radius proxy.
+        r_max = max(c_y, c_z, 1e-9)
+        tau_t_elastic = np.array(T) * r_max / max(sec.J, 1e-12)
+        tau_t = tau_t_elastic / k_t
+
+        # Use von-Mises equivalent stress to include torsion in margin evaluation.
+        sigma_eq_elastic = np.sqrt(sigma_elastic**2 + 3.0*tau_t_elastic**2)
+        sigma_eq = np.sqrt(sigma**2 + 3.0*tau_t**2)
+        margin_elastic = sigma_allow / np.maximum(np.abs(sigma_eq_elastic), 1e-9) - 1.0
+        margin = sigma_allow / np.maximum(np.abs(sigma_eq), 1e-9) - 1.0
 
         member_curves.append((float(min(xi, xj)), float(max(xi, xj)), xg, DY, RZ, DZ, RY, N, V, M, Vz, My, T, sigma, tau_t, margin, margin_elastic))
 
