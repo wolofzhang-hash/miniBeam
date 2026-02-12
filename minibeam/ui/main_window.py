@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
         self.project.materials[mat.uid] = mat
 
         sp = rect_solid(100.0, 10.0)
-        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_z=sp.c_z, Zp=sp.Zp, shape_factor=sp.shape_factor)
+        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_y=sp.c_y, c_z=sp.c_z, Zp_y=sp.Zp_y, Zp_z=sp.Zp_z, shape_factor_y=sp.shape_factor_y, shape_factor_z=sp.shape_factor_z, shape_factor_t=sp.shape_factor_t, Zp=sp.Zp_z, shape_factor=sp.shape_factor_z)
         self.project.sections[sec.uid] = sec
 
         self._merge_libraries_into_project()
@@ -1163,10 +1163,13 @@ class MainWindow(QMainWindow):
     def refresh_tree(self):
         self.tree.clear()
 
+        assigned_mat_uids = {m.material_uid for m in self.project.members.values() if m.material_uid in self.project.materials}
+        assigned_sec_uids = {m.section_uid for m in self.project.members.values() if m.section_uid in self.project.sections}
+
         root_pts = QTreeWidgetItem([f"Points ({len(self.project.points)})"])
         root_mem = QTreeWidgetItem([f"Members ({len(self.project.members)})"])
-        root_mats = QTreeWidgetItem([f"Materials ({len(self.project.materials)})"])
-        root_secs = QTreeWidgetItem([f"Sections ({len(self.project.sections)})"])
+        root_mats = QTreeWidgetItem([f"Materials ({len(assigned_mat_uids)})"])
+        root_secs = QTreeWidgetItem([f"Sections ({len(assigned_sec_uids)})"])
         root_constraints = QTreeWidgetItem(["Constraints"])
         root_bushes = QTreeWidgetItem(["Bush"])
         root_loads = QTreeWidgetItem(["Loads"])
@@ -1185,10 +1188,10 @@ class MainWindow(QMainWindow):
             sec_name = self.project.sections.get(m.section_uid).name if m.section_uid in self.project.sections else "?"
             root_mem.addChild(QTreeWidgetItem([f"{m.name}  L={abs(xj-xi):.3f}  Mat={mat_name}  Sec={sec_name}"]))
 
-        for mat in sorted(self.project.materials.values(), key=lambda x: x.name.lower()):
+        for mat in sorted((self.project.materials[uid] for uid in assigned_mat_uids), key=lambda x: x.name.lower()):
             root_mats.addChild(QTreeWidgetItem([f"{mat.name} (E={mat.E:.0f}, fy={mat.sigma_y:.1f})"]))
 
-        for sec in sorted(self.project.sections.values(), key=lambda x: x.name.lower()):
+        for sec in sorted((self.project.sections[uid] for uid in assigned_sec_uids), key=lambda x: x.name.lower()):
             root_secs.addChild(QTreeWidgetItem([f"{sec.name} ({sec.type}, A={sec.A:.2f}, Iz={sec.Iz:.2f})"]))
 
         for p in self.project.sorted_points():

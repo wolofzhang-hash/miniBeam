@@ -8,6 +8,28 @@ Units = Literal["mm-N-Nmm"]
 def _uid() -> str:
     return uuid.uuid4().hex[:10]
 
+
+def _upgrade_section(sec: "Section") -> "Section":
+    """Populate new per-axis plastic fields from legacy values when needed."""
+    legacy_k = float(getattr(sec, "shape_factor", 1.0) or 1.0)
+    legacy_zp = float(getattr(sec, "Zp", 1.0) or 1.0)
+    if not hasattr(sec, "c_y") or sec.c_y <= 0:
+        sec.c_y = float(getattr(sec, "c_z", 1.0) or 1.0)
+    if not hasattr(sec, "Zp_y") or sec.Zp_y <= 0:
+        sec.Zp_y = legacy_zp
+    if not hasattr(sec, "Zp_z") or sec.Zp_z <= 0:
+        sec.Zp_z = legacy_zp
+    if not hasattr(sec, "shape_factor_y") or sec.shape_factor_y <= 0:
+        sec.shape_factor_y = legacy_k
+    if not hasattr(sec, "shape_factor_z") or sec.shape_factor_z <= 0:
+        sec.shape_factor_z = legacy_k
+    if not hasattr(sec, "shape_factor_t") or sec.shape_factor_t <= 0:
+        sec.shape_factor_t = 1.0
+    # keep legacy fields synchronized to z-axis bending for compatibility.
+    sec.Zp = sec.Zp_z
+    sec.shape_factor = sec.shape_factor_z
+    return sec
+
 @dataclass
 class Constraint:
     # DOF in PyNite naming.
@@ -67,9 +89,17 @@ class Section:
     Iy: float = 1.0
     Iz: float = 1.0
     J: float = 1.0
+    c_y: float = 1.0  # max distance for bending about y (My -> stress uses c_y with Iy)
     c_z: float = 1.0  # max distance for bending about z (Mz -> stress uses c_z with Iz)
-    Zp: float = 1.0   # plastic section modulus for bending about z
-    shape_factor: float = 1.0  # k = Zp / Ze
+    Zp_y: float = 1.0  # plastic section modulus for bending about y
+    Zp_z: float = 1.0  # plastic section modulus for bending about z
+    shape_factor_y: float = 1.0  # ky = Zp_y / Zey
+    shape_factor_z: float = 1.0  # kz = Zp_z / Zez
+    shape_factor_t: float = 1.0  # kt for torsion correction
+
+    # Legacy fields kept for backward compatibility with old saved files.
+    Zp: float = 1.0
+    shape_factor: float = 1.0
 
     # Wizard parameters (for sketch/preview). Units: mm.
     p1: float = 0.0
@@ -234,7 +264,7 @@ class Project:
 
         prj.sections = {}
         for uid, sd in d.get("sections", {}).items():
-            sec = Section(**sd)
+            sec = _upgrade_section(Section(**sd))
             prj.sections[uid] = sec
 
         prj.combos = {}
@@ -283,7 +313,7 @@ class Project:
             prj.materials[uid] = Material(**md)
         prj.sections = {}
         for uid, sd in d.get("sections", {}).items():
-            prj.sections[uid] = Section(**sd)
+            prj.sections[uid] = _upgrade_section(Section(**sd))
 
         prj.points = {}
         for uid, pd in d.get("points", {}).items():
