@@ -262,6 +262,7 @@ class MainWindow(QMainWindow):
         if self.project.spatial_mode == "3D":
             self.canvas_xz = BeamCanvas(view_plane="XZ")
             self.canvas_xz.set_mode("readonly")
+            self.canvas_xz.set_read_only_display(True)
             self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
             self.canvas_xz.setInteractive(False)
         self.results_view = ResultsView()
@@ -395,6 +396,7 @@ class MainWindow(QMainWindow):
         if wants_3d and self.canvas_xz is None:
             self.canvas_xz = BeamCanvas(view_plane="XZ")
             self.canvas_xz.set_mode("readonly")
+            self.canvas_xz.set_read_only_display(True)
             self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
             self.canvas_xz.setInteractive(False)
             self.xz_label = QLabel("XZ View (display only)")
@@ -430,7 +432,7 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel("请选择项目模式（创建后不可中途切换）："))
         rb_2d = QRadioButton("2D（仅 XY 视图，平面梁）")
-        rb_3d = QRadioButton("3D（XY 可编辑 + XZ 只读显示，3D frame 自由度）")
+        rb_3d = QRadioButton("3D（XY，XZ双视图，空间梁）")
         rb_2d.setChecked(default_mode != "3D")
         rb_3d.setChecked(default_mode == "3D")
         lay.addWidget(rb_2d)
@@ -847,6 +849,8 @@ class MainWindow(QMainWindow):
             out = solve_with_pynite(self.project, "COMB1", n_samples_per_member=int(getattr(getattr(self, "sp_samples", None), "value", lambda: 50)()))
             self.last_results = out
             self.canvas.set_support_reactions(out.reactions)
+            if self.canvas_xz is not None:
+                self.canvas_xz.set_support_reactions(out.reactions)
             QMessageBox.information(self, "Solve", "求解成功。请到 Results 里查看。")
         except PyniteSolverError as e:
             QMessageBox.critical(self, "PyNite Error", str(e))

@@ -155,7 +155,7 @@ class MaterialManagerDialog(QDialog):
     def __init__(self, prj: Project, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Materials")
-        self.resize(760, 460)
+        self.resize(900, 520)
         self.prj = prj
         self.model_materials = {uid: Material(**vars(mat)) for uid, mat in prj.materials.items()}
         self.library_materials = self._load_library_materials()
