@@ -159,7 +159,6 @@ class MainWindow(QMainWindow):
         self.act_solve = QAction(self._std_icon("SP_MediaPlay", "SP_DialogOkButton"), "Solve", self)
 
         self.act_show_results = QAction(self._std_icon("SP_ComputerIcon", "SP_DesktopIcon"), "Results", self)
-        self.act_back_to_model = QAction(self._std_icon("SP_ArrowBack", "SP_ArrowLeft"), "Back", self)
         self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Export CSV", self)
         self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), "Help", self)
         self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), "Copyright", self)
@@ -232,7 +231,7 @@ class MainWindow(QMainWindow):
 
         mk_tab("Solve & Results", [
             mk_group("Solve", [self.act_validate, self.act_solve]),
-            mk_group("Results", [self.act_show_results, self.act_export_csv, self.act_back_to_model]),
+            mk_group("Results", [self.act_show_results, self.act_export_csv]),
         ])
 
         mk_tab("Help", [
@@ -349,7 +348,6 @@ class MainWindow(QMainWindow):
         self.act_validate.triggered.connect(self.validate_only)
         self.act_solve.triggered.connect(self.solve_active)
         self.act_show_results.triggered.connect(self.show_results)
-        self.act_back_to_model.triggered.connect(self.back_to_model)
         self.act_export_csv.triggered.connect(self.export_results_csv)
         self.act_help_pdf.triggered.connect(self.open_help_pdf)
         self.act_about.triggered.connect(self.show_about_dialog)
@@ -774,10 +772,6 @@ class MainWindow(QMainWindow):
         def_scale = float(sp.value()) if sp is not None else 1.0
         dlg = ResultsGridDialog(self.project, self.last_results, def_scale=def_scale, parent=self)
         dlg.exec()
-
-    def back_to_model(self):
-        # Return from results to interactive modeling canvas
-        self.center_stack.setCurrentWidget(self.canvas)
 
     # ---------------- Canvas callbacks ----------------
 
