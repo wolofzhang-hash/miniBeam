@@ -1,14 +1,20 @@
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QPushButton, QFormLayout, QLineEdit,
-    QDoubleSpinBox, QLabel, QMessageBox, QComboBox, QGroupBox
+    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFormLayout, QLineEdit,
+    QDoubleSpinBox, QLabel, QMessageBox, QComboBox, QGroupBox, QTreeWidget, QTreeWidgetItem
 )
 from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygonF
 
 from ..core.model import Project, Material, Section
 from ..core.section_props import rect_solid, circle_solid, i_section, rect_hollow, circle_hollow
-from ..core.library_store import save_material_library, save_section_library
+from ..core.library_store import (
+    save_material_library,
+    save_section_library,
+    load_builtin_material_library,
+    load_material_library,
+    load_section_library,
+)
 
 
 class SectionPreview(QLabel):
@@ -149,12 +155,15 @@ class MaterialManagerDialog(QDialog):
     def __init__(self, prj: Project, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Materials")
-        self.resize(640, 420)
+        self.resize(760, 460)
         self.prj = prj
+        self.library_materials = self._load_library_materials()
+        self._library_edit_enabled = False
 
         lay = QHBoxLayout(self)
-        self.list = QListWidget()
-        lay.addWidget(self.list, 1)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Materials"])
+        lay.addWidget(self.tree, 1)
 
         right = QVBoxLayout()
         lay.addLayout(right, 2)
@@ -165,6 +174,7 @@ class MaterialManagerDialog(QDialog):
         self.ed_name = QLineEdit()
         self.ed_E = QDoubleSpinBox(); self.ed_E.setRange(0, 1e12); self.ed_E.setDecimals(3)
         self.ed_G = QDoubleSpinBox(); self.ed_G.setRange(0, 1e12); self.ed_G.setDecimals(3)
+
         class NuSpinBox(QDoubleSpinBox):
             def textFromValue(self, val: float) -> str:  # noqa: N802 (Qt API)
                 v = float(val)
@@ -181,15 +191,23 @@ class MaterialManagerDialog(QDialog):
         form.addRow("nu", self.ed_nu)
         form.addRow("sigma_y (N/mm²)", self.ed_fy)
 
+        self.lbl_scope_hint = QLabel("")
+        self.lbl_scope_hint.setWordWrap(True)
+        right.addWidget(self.lbl_scope_hint)
+
         btns = QHBoxLayout()
         right.addLayout(btns)
-        self.btn_add = QPushButton("Add")
+        self.btn_add = QPushButton("Add in Model")
+        self.btn_add_from_library = QPushButton("Add Library -> Model")
         self.btn_del = QPushButton("Delete")
-        self.btn_save_lib = QPushButton("Save to Library")
+        self.btn_edit_lib = QPushButton("Enable Library Edit (Risky)")
+        self.btn_save_lib = QPushButton("Save Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
+        btns.addWidget(self.btn_add_from_library)
         btns.addWidget(self.btn_del)
+        btns.addWidget(self.btn_edit_lib)
         btns.addWidget(self.btn_save_lib)
         btns.addStretch(1)
         btns.addWidget(self.btn_ok)
@@ -198,9 +216,11 @@ class MaterialManagerDialog(QDialog):
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_add.clicked.connect(self.add_material)
+        self.btn_add_from_library.clicked.connect(self.add_selected_library_to_model)
         self.btn_del.clicked.connect(self.delete_material)
+        self.btn_edit_lib.clicked.connect(self.enable_library_edit)
         self.btn_save_lib.clicked.connect(self.save_library)
-        self.list.currentRowChanged.connect(self.load_selected)
+        self.tree.currentItemChanged.connect(self.load_selected)
         # live update
         for w in [self.ed_name, self.ed_E, self.ed_G, self.ed_nu, self.ed_fy]:
             if hasattr(w, "textChanged"):
@@ -211,69 +231,165 @@ class MaterialManagerDialog(QDialog):
         self._loading_selection = False
         self.refresh()
 
-    def refresh(self, selected_uid: str | None = None):
-        if selected_uid is None:
-            selected_uid = self._current_uid()
-        self.list.clear()
-        selected_row = -1
+    def _load_library_materials(self) -> dict[str, Material]:
+        mats: dict[str, Material] = {}
+        by_name: set[str] = set()
+        for src in (load_builtin_material_library(), load_material_library()):
+            for m in src:
+                if m.name in by_name:
+                    continue
+                mats[m.uid] = m
+                by_name.add(m.name)
+        return mats
+
+    def _current_selection(self) -> tuple[str, str] | tuple[None, None]:
+        it = self.tree.currentItem()
+        if it is None:
+            return (None, None)
+        data = it.data(0, Qt.ItemDataRole.UserRole)
+        if not data:
+            return (None, None)
+        return data
+
+    def _selected_material(self) -> Material | None:
+        scope, uid = self._current_selection()
+        if scope == "model":
+            return self.prj.materials.get(uid)
+        if scope == "library":
+            return self.library_materials.get(uid)
+        return None
+
+    def _set_editor_enabled(self, enabled: bool):
+        for w in [self.ed_name, self.ed_E, self.ed_G, self.ed_nu, self.ed_fy]:
+            w.setEnabled(enabled)
+
+    def refresh(self, selected: tuple[str, str] | None = None):
+        if selected is None:
+            selected = self._current_selection()
+        self.tree.clear()
+
+        root_model = QTreeWidgetItem(["Current Model"])
+        root_model.setData(0, Qt.ItemDataRole.UserRole, None)
+        self.tree.addTopLevelItem(root_model)
         for mat in self.prj.materials.values():
-            self.list.addItem(f"{mat.name} [{mat.uid}]")
-            if mat.uid == selected_uid:
-                selected_row = self.list.count() - 1
-        if self.list.count() > 0:
-            self.list.setCurrentRow(selected_row if selected_row >= 0 else 0)
+            item = QTreeWidgetItem([f"{mat.name} [{mat.uid}]"])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("model", mat.uid))
+            root_model.addChild(item)
 
-    def _current_uid(self):
-        row = self.list.currentRow()
-        if row < 0:
-            return None
-        txt = self.list.item(row).text()
-        uid = txt.split("[")[-1].split("]")[0]
-        return uid
+        root_lib = QTreeWidgetItem(["Library"])
+        root_lib.setData(0, Qt.ItemDataRole.UserRole, None)
+        self.tree.addTopLevelItem(root_lib)
+        for mat in self.library_materials.values():
+            item = QTreeWidgetItem([f"{mat.name} [{mat.uid}]"])
+            item.setData(0, Qt.ItemDataRole.UserRole, ("library", mat.uid))
+            root_lib.addChild(item)
 
-    def load_selected(self, _):
-        uid = self._current_uid()
-        if not uid or uid not in self.prj.materials:
+        root_model.setExpanded(True)
+        root_lib.setExpanded(True)
+
+        if selected and all(selected):
+            for i in range(self.tree.topLevelItemCount()):
+                root = self.tree.topLevelItem(i)
+                for c in range(root.childCount()):
+                    child = root.child(c)
+                    if child.data(0, Qt.ItemDataRole.UserRole) == selected:
+                        self.tree.setCurrentItem(child)
+                        return
+
+    def load_selected(self, current, _previous):
+        _ = current
+        mat = self._selected_material()
+        if mat is None:
+            self._set_editor_enabled(False)
             return
-        m = self.prj.materials[uid]
+
         self._loading_selection = True
-        self.ed_name.setText(m.name)
-        self.ed_E.setValue(m.E)
-        self.ed_G.setValue(m.G)
-        self.ed_nu.setValue(m.nu)
-        self.ed_fy.setValue(m.sigma_y)
+        self.ed_name.setText(mat.name)
+        self.ed_E.setValue(mat.E)
+        self.ed_G.setValue(mat.G)
+        self.ed_nu.setValue(mat.nu)
+        self.ed_fy.setValue(mat.sigma_y)
         self._loading_selection = False
+
+        scope, _uid = self._current_selection()
+        editable = (scope == "model") or (scope == "library" and self._library_edit_enabled)
+        self._set_editor_enabled(editable)
+        self.btn_add_from_library.setEnabled(scope == "library")
+        if scope == "library" and not self._library_edit_enabled:
+            self.lbl_scope_hint.setText("Library 数据默认只读。请使用“Add Library -> Model”复制到当前模型后再修改。")
+        elif scope == "library":
+            self.lbl_scope_hint.setText("⚠ 当前正在直接编辑 Library，可能影响后续所有新模型，请谨慎操作。")
+        else:
+            self.lbl_scope_hint.setText("正在编辑当前模型中的材料。")
 
     def update_selected(self, *_):
         if self._loading_selection:
             return
-        uid = self._current_uid()
-        if not uid or uid not in self.prj.materials:
+        scope, uid = self._current_selection()
+        if scope == "model":
+            m = self.prj.materials.get(uid)
+        elif scope == "library" and self._library_edit_enabled:
+            m = self.library_materials.get(uid)
+        else:
             return
-        m = self.prj.materials[uid]
+        if m is None:
+            return
+
         m.name = self.ed_name.text().strip() or m.name
         m.E = float(self.ed_E.value())
         m.G = float(self.ed_G.value())
         m.nu = float(self.ed_nu.value())
         m.sigma_y = float(self.ed_fy.value())
-        self.refresh(selected_uid=uid)
+        self.refresh(selected=(scope, uid))
 
     def add_material(self):
         m = Material(name="Material", E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
         self.prj.materials[m.uid] = m
-        self.refresh()
+        self.refresh(selected=("model", m.uid))
+
+    def add_selected_library_to_model(self):
+        scope, uid = self._current_selection()
+        if scope != "library" or uid not in self.library_materials:
+            return
+        src = self.library_materials[uid]
+        m = Material(name=src.name, E=src.E, G=src.G, nu=src.nu, rho=src.rho, sigma_y=src.sigma_y)
+        self.prj.materials[m.uid] = m
+        self.refresh(selected=("model", m.uid))
 
     def delete_material(self):
-        uid = self._current_uid()
+        scope, uid = self._current_selection()
         if not uid:
             return
-        self.prj.materials.pop(uid, None)
+        if scope == "model":
+            self.prj.materials.pop(uid, None)
+        elif scope == "library":
+            if not self._library_edit_enabled:
+                QMessageBox.warning(self, "Materials", "Library 默认不可删除。请先启用高风险编辑模式。")
+                return
+            self.library_materials.pop(uid, None)
         self.refresh()
 
+    def enable_library_edit(self):
+        if self._library_edit_enabled:
+            return
+        reply = QMessageBox.warning(
+            self,
+            "Risk Warning",
+            "直接修改 Library 会影响所有后续新建模型，存在风险。是否继续启用 Library 编辑？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._library_edit_enabled = True
+            self.load_selected(self.tree.currentItem(), None)
+
     def save_library(self):
+        if not self._library_edit_enabled:
+            QMessageBox.warning(self, "Materials", "Library 编辑未启用。请先点击“Enable Library Edit (Risky)”。")
+            return
         try:
-            save_material_library(self.prj.materials)
-            QMessageBox.information(self, "Materials", "材料已保存到材料库（~/.minibeam/materials.json）。")
+            save_material_library(self.library_materials)
+            QMessageBox.information(self, "Materials", "材料库已保存（~/.minibeam/materials.json）。")
         except Exception as e:
             QMessageBox.critical(self, "Materials", f"保存材料库失败：{e}")
 
@@ -282,12 +398,15 @@ class SectionManagerDialog(QDialog):
     def __init__(self, prj: Project, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Sections")
-        self.resize(760, 520)
+        self.resize(900, 520)
         self.prj = prj
+        self.library_sections = self._load_library_sections()
+        self._library_edit_enabled = False
 
         lay = QHBoxLayout(self)
-        self.list = QListWidget()
-        lay.addWidget(self.list, 1)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Sections"])
+        lay.addWidget(self.tree, 1)
 
         right = QVBoxLayout()
         lay.addLayout(right, 2)
@@ -334,13 +453,17 @@ class SectionManagerDialog(QDialog):
 
         btns = QHBoxLayout()
         right.addLayout(btns)
-        self.btn_add = QPushButton("Add / Update")
+        self.btn_add = QPushButton("Add / Update in Model")
+        self.btn_add_from_library = QPushButton("Add Library -> Model")
         self.btn_del = QPushButton("Delete")
-        self.btn_save_lib = QPushButton("Save to Library")
+        self.btn_edit_lib = QPushButton("Enable Library Edit (Risky)")
+        self.btn_save_lib = QPushButton("Save Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
+        btns.addWidget(self.btn_add_from_library)
         btns.addWidget(self.btn_del)
+        btns.addWidget(self.btn_edit_lib)
         btns.addWidget(self.btn_save_lib)
         btns.addStretch(1)
         btns.addWidget(self.btn_ok)
@@ -349,9 +472,11 @@ class SectionManagerDialog(QDialog):
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_add.clicked.connect(self.add_or_update)
+        self.btn_add_from_library.clicked.connect(self.add_selected_library_to_model)
         self.btn_del.clicked.connect(self.delete_section)
+        self.btn_edit_lib.clicked.connect(self.enable_library_edit)
         self.cmb_type.currentTextChanged.connect(self._update_hint)
-        self.list.currentRowChanged.connect(self._load_selected)
+        self.tree.currentItemChanged.connect(self._load_selected)
         self.btn_save_lib.clicked.connect(self.save_library)
         # live preview
         for sp in [self.sp1, self.sp2, self.sp3, self.sp4, self.sp5]:
@@ -361,6 +486,33 @@ class SectionManagerDialog(QDialog):
         self._loading_selection = False
         self._update_hint(self.cmb_type.currentText())
         self.refresh()
+
+    def _load_library_sections(self) -> dict[str, Section]:
+        sections: dict[str, Section] = {}
+        by_name: set[str] = set()
+        for sec in load_section_library():
+            if sec.name in by_name:
+                continue
+            sections[sec.uid] = sec
+            by_name.add(sec.name)
+        return sections
+
+    def _current_selection(self) -> tuple[str, str] | tuple[None, None]:
+        it = self.tree.currentItem()
+        if it is None:
+            return (None, None)
+        data = it.data(0, Qt.ItemDataRole.UserRole)
+        if not data:
+            return (None, None)
+        return data
+
+    def _selected_section(self) -> Section | None:
+        scope, uid = self._current_selection()
+        if scope == "model":
+            return self.prj.sections.get(uid)
+        if scope == "library":
+            return self.library_sections.get(uid)
+        return None
 
     def _update_preview(self):
         typ = self.cmb_type.currentText()
@@ -418,35 +570,65 @@ class SectionManagerDialog(QDialog):
             self.ed_name.setText("I200")
             self.sp1.setValue(200.0); self.sp2.setValue(100.0); self.sp3.setValue(10.0); self.sp4.setValue(6.0)
 
-    def refresh(self, selected_uid: str | None = None):
-        if selected_uid is None:
-            selected_uid = self._current_uid()
-        self.list.clear()
-        selected_row = -1
+    def refresh(self, selected: tuple[str, str] | None = None):
+        if selected is None:
+            selected = self._current_selection()
+        self.tree.clear()
+
+        root_model = QTreeWidgetItem(["Current Model"])
+        root_model.setData(0, Qt.ItemDataRole.UserRole, None)
+        self.tree.addTopLevelItem(root_model)
         for sec in self.prj.sections.values():
-            self.list.addItem(f"{sec.name} ({sec.type}) [{sec.uid}]")
-            if sec.uid == selected_uid:
-                selected_row = self.list.count() - 1
-        if self.list.count() > 0:
-            self.list.setCurrentRow(selected_row if selected_row >= 0 else 0)
+            it = QTreeWidgetItem([f"{sec.name} ({sec.type}) [{sec.uid}]"])
+            it.setData(0, Qt.ItemDataRole.UserRole, ("model", sec.uid))
+            root_model.addChild(it)
 
-    def _current_uid(self):
-        row = self.list.currentRow()
-        if row < 0:
-            return None
-        txt = self.list.item(row).text()
-        uid = txt.split("[")[-1].split("]")[0]
-        return uid
+        root_lib = QTreeWidgetItem(["Library"])
+        root_lib.setData(0, Qt.ItemDataRole.UserRole, None)
+        self.tree.addTopLevelItem(root_lib)
+        for sec in self.library_sections.values():
+            it = QTreeWidgetItem([f"{sec.name} ({sec.type}) [{sec.uid}]"])
+            it.setData(0, Qt.ItemDataRole.UserRole, ("library", sec.uid))
+            root_lib.addChild(it)
 
-    def _load_selected(self, _):
-        uid = self._current_uid()
-        if not uid or uid not in self.prj.sections:
+        root_model.setExpanded(True)
+        root_lib.setExpanded(True)
+
+        if selected and all(selected):
+            for i in range(self.tree.topLevelItemCount()):
+                root = self.tree.topLevelItem(i)
+                for c in range(root.childCount()):
+                    child = root.child(c)
+                    if child.data(0, Qt.ItemDataRole.UserRole) == selected:
+                        self.tree.setCurrentItem(child)
+                        return
+
+    def _load_selected(self, current, _previous):
+        _ = current
+        s = self._selected_section()
+        if s is None:
+            self.btn_add_from_library.setEnabled(False)
             return
-        s = self.prj.sections[uid]
+
         self._loading_selection = True
         self.cmb_type.setCurrentText(s.type)
         self.ed_name.setText(s.name)
+        self.sp1.setValue(float(s.p1))
+        self.sp2.setValue(float(s.p2))
+        self.sp3.setValue(float(s.p3))
+        self.sp4.setValue(float(s.p4))
         self._loading_selection = False
+        self._update_preview()
+
+        scope, _uid = self._current_selection()
+        editable = (scope == "model") or (scope == "library" and self._library_edit_enabled)
+        for w in [self.cmb_type, self.ed_name, self.sp1, self.sp2, self.sp3, self.sp4, self.sp5]:
+            w.setEnabled(editable)
+        self.btn_add_from_library.setEnabled(scope == "library")
+        if scope == "library" and not self._library_edit_enabled:
+            self.lbl_hint.setText("Library 截面默认只读。请使用“Add Library -> Model”复制后再编辑。")
+        elif scope == "library":
+            self.lbl_hint.setText("⚠ 当前正在直接编辑 Library 截面，可能影响后续所有模型。")
 
     def add_or_update(self):
         typ = self.cmb_type.currentText()
@@ -467,10 +649,16 @@ class SectionManagerDialog(QDialog):
             h = float(self.sp1.value()); bf = float(self.sp2.value()); tf = float(self.sp3.value()); tw = float(self.sp4.value())
             props = i_section(h, bf, tf, tw)
 
-        uid = self._current_uid()
-        if uid and uid in self.prj.sections and self.prj.sections[uid].name == name:
-            s = self.prj.sections[uid]
+        scope, uid = self._current_selection()
+        target_sections = self.prj.sections if scope == "model" else self.library_sections
+        if scope == "library" and not self._library_edit_enabled:
+            QMessageBox.warning(self, "Sections", "Library 默认只读，请先复制到模型，或启用高风险编辑模式。")
+            return
+
+        if uid and uid in target_sections:
+            s = target_sections[uid]
             s.type = typ
+            s.name = name
             s.A, s.Iy, s.Iz, s.J, s.c_z = props.A, props.Iy, props.Iz, props.J, props.c_z
             s.p1, s.p2, s.p3, s.p4 = float(self.sp1.value()), float(self.sp2.value()), float(self.sp3.value()), float(self.sp4.value())
         else:
@@ -487,19 +675,63 @@ class SectionManagerDialog(QDialog):
                 p3=float(self.sp3.value()),
                 p4=float(self.sp4.value()),
             )
-            self.prj.sections[s.uid] = s
-        self.refresh(selected_uid=s.uid)
+            target_sections[s.uid] = s
+        self.refresh(selected=(scope if scope else "model", s.uid))
+
+    def add_selected_library_to_model(self):
+        scope, uid = self._current_selection()
+        if scope != "library" or uid not in self.library_sections:
+            return
+        src = self.library_sections[uid]
+        sec = Section(
+            name=src.name,
+            type=src.type,
+            A=src.A,
+            Iy=src.Iy,
+            Iz=src.Iz,
+            J=src.J,
+            c_z=src.c_z,
+            p1=src.p1,
+            p2=src.p2,
+            p3=src.p3,
+            p4=src.p4,
+        )
+        self.prj.sections[sec.uid] = sec
+        self.refresh(selected=("model", sec.uid))
+
+    def enable_library_edit(self):
+        if self._library_edit_enabled:
+            return
+        reply = QMessageBox.warning(
+            self,
+            "Risk Warning",
+            "直接修改截面 Library 会影响所有后续新建模型，存在风险。是否继续启用编辑？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._library_edit_enabled = True
+            self._load_selected(self.tree.currentItem(), None)
 
     def save_library(self):
+        if not self._library_edit_enabled:
+            QMessageBox.warning(self, "Sections", "Library 编辑未启用。请先点击“Enable Library Edit (Risky)”。")
+            return
         try:
-            save_section_library(self.prj.sections)
-            QMessageBox.information(self, "Sections", "截面已保存到截面库（~/.minibeam/sections.json）。")
+            save_section_library(self.library_sections)
+            QMessageBox.information(self, "Sections", "截面库已保存（~/.minibeam/sections.json）。")
         except Exception as e:
             QMessageBox.critical(self, "Sections", f"保存截面库失败：{e}")
 
     def delete_section(self):
-        uid = self._current_uid()
+        scope, uid = self._current_selection()
         if not uid:
             return
-        self.prj.sections.pop(uid, None)
+        if scope == "model":
+            self.prj.sections.pop(uid, None)
+        elif scope == "library":
+            if not self._library_edit_enabled:
+                QMessageBox.warning(self, "Sections", "Library 默认不可删除，请先启用高风险编辑模式。")
+                return
+            self.library_sections.pop(uid, None)
         self.refresh()
