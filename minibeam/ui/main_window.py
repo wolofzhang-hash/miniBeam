@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
     QLabel, QMessageBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
     QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem, QDialog,
-    QDialogButtonBox, QRadioButton
+    QDialogButtonBox, QRadioButton, QTextBrowser
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
@@ -36,6 +36,9 @@ class MainWindow(QMainWindow):
     def _resource_base_dir(self) -> Path:
         """Return runtime directory for adjacent resources (PyInstaller-safe)."""
         if getattr(sys, "frozen", False):
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                return Path(meipass).resolve()
             return Path(sys.executable).resolve().parent
         return Path(__file__).resolve().parents[2]
 
@@ -654,9 +657,40 @@ class MainWindow(QMainWindow):
     def open_help_pdf(self):
         help_pdf = self._resource_path("help.pdf")
         if not help_pdf.exists():
-            QMessageBox.warning(self, "Help", f"help.pdf not found\n{help_pdf}")
+            self._show_help_text_dialog(f"help.pdf not found\n{help_pdf}")
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(help_pdf)))
+        if QDesktopServices.openUrl(QUrl.fromLocalFile(str(help_pdf))):
+            return
+        self._show_help_text_dialog(
+            "无法调用系统 PDF 查看器打开 help.pdf，已切换为内置帮助文本。"
+        )
+
+    def _show_help_text_dialog(self, prefix_message: str = ""):
+        help_md = self._resource_path("docs/help.md")
+        if not help_md.exists():
+            QMessageBox.warning(
+                self,
+                "Help",
+                f"{prefix_message}\n\nhelp.md not found\n{help_md}".strip(),
+            )
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("MiniBeam Help")
+        dlg.resize(880, 680)
+
+        lay = QVBoxLayout(dlg)
+        if prefix_message:
+            lay.addWidget(QLabel(prefix_message))
+        viewer = QTextBrowser(dlg)
+        viewer.setMarkdown(help_md.read_text(encoding="utf-8"))
+        lay.addWidget(viewer, 1)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, parent=dlg)
+        btns.rejected.connect(dlg.reject)
+        btns.accepted.connect(dlg.accept)
+        lay.addWidget(btns)
+        dlg.exec()
 
     def show_about_dialog(self):
         QMessageBox.information(
