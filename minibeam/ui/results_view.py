@@ -53,23 +53,19 @@ class ResultsView(QWidget):
             ax.axhline(0, linewidth=1, color="#d3d3d3", linestyle="--")
 
         if rtype == "FBD":
-            # Plot baseline and show loads/reactions at nodes
-            x = _norm(out.x_nodes)
-            y0 = np.zeros_like(x)
-            ax.plot(x, y0)
-
-            # reactions
-            for i, px in enumerate(x):
-                name = f"P{i+1}"
-                r = out.reactions.get(name, {})
-                fy = r.get("FY", 0.0)
-                if abs(fy) > 1e-9:
-                    ax.annotate(f"R={fy:.1f}", (px, 0), xytext=(px, 30), textcoords="offset points",
-                                arrowprops=dict(arrowstyle="->"))
-
-            ax.set_xlabel("x (mm)")
-            ax.set_ylabel("FBD")
-            ax.set_title("Free Body Diagram (Reactions shown)")
+            # FBD is rendered on the main UI canvas (with complete support
+            # reactions). Keep this plot intentionally empty.
+            ax.text(
+                0.5,
+                0.5,
+                "FBD is shown on the model canvas\nafter Solve.",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=11,
+                color="#444444",
+            )
+            ax.set_axis_off()
 
         elif rtype == "Deflection":
             if getattr(out, "x_diag", None) is not None and np.asarray(out.x_diag).size:
@@ -155,7 +151,7 @@ class ResultsView(QWidget):
             idx = int(np.argmin(out.margin))
             ax.annotate(f"min {out.margin[idx]:.3f}", (out.x_diag[idx] - x0, out.margin[idx]))
 
-        self.fig.tight_layout()
+        self.fig.subplots_adjust(left=0.10, right=0.98, bottom=0.12, top=0.90)
         
         try:
             ax.set_xlim(0, max(0.0, x1 - x0))
