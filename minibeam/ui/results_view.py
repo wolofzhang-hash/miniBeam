@@ -125,7 +125,7 @@ class ResultsView(QWidget):
             ax.plot(_norm(xtau), ytau)
             _draw_zero_line()
             ax.set_xlabel("x (mm)")
-            ax.set_ylabel("tau (N/mm²)")
+            ax.set_ylabel("tau (MPa)")
             ax.set_title("Torsion Shear Stress (simplified)")
 
         elif rtype == "Stress σ":
@@ -133,7 +133,7 @@ class ResultsView(QWidget):
             ax.plot(_norm(xs), ys)
             _draw_zero_line()
             ax.set_xlabel("x (mm)")
-            ax.set_ylabel("sigma (N/mm²)")
+            ax.set_ylabel("sigma (MPa)")
             ax.set_title("Bending Stress sigma = M*c/I")
 
         elif rtype == "Margin MS":

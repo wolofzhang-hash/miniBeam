@@ -163,8 +163,8 @@ class MaterialManagerDialog(QDialog):
         right.addLayout(form)
 
         self.ed_name = QLineEdit()
-        self.ed_E = QDoubleSpinBox(); self.ed_E.setRange(0, 1e12); self.ed_E.setDecimals(3)
-        self.ed_G = QDoubleSpinBox(); self.ed_G.setRange(0, 1e12); self.ed_G.setDecimals(3)
+        self.ed_E = QDoubleSpinBox(); self.ed_E.setRange(0, 1e12); self.ed_E.setDecimals(0)
+        self.ed_G = QDoubleSpinBox(); self.ed_G.setRange(0, 1e12); self.ed_G.setDecimals(0)
         class NuSpinBox(QDoubleSpinBox):
             def textFromValue(self, val: float) -> str:  # noqa: N802 (Qt API)
                 v = float(val)
@@ -173,13 +173,13 @@ class MaterialManagerDialog(QDialog):
                 return f"{v:.0f}"
 
         self.ed_nu = NuSpinBox(); self.ed_nu.setRange(0.0, 0.49); self.ed_nu.setDecimals(2)
-        self.ed_fy = QDoubleSpinBox(); self.ed_fy.setRange(0, 1e6); self.ed_fy.setDecimals(3)
+        self.ed_fy = QDoubleSpinBox(); self.ed_fy.setRange(0, 1e6); self.ed_fy.setDecimals(0)
 
         form.addRow("Name", self.ed_name)
-        form.addRow("E (N/mm²)", self.ed_E)
-        form.addRow("G (N/mm²)", self.ed_G)
+        form.addRow("E (MPa)", self.ed_E)
+        form.addRow("G (MPa)", self.ed_G)
         form.addRow("nu", self.ed_nu)
-        form.addRow("sigma_y (N/mm²)", self.ed_fy)
+        form.addRow("sigma_y (MPa)", self.ed_fy)
 
         btns = QHBoxLayout()
         right.addLayout(btns)
@@ -301,11 +301,11 @@ class SectionManagerDialog(QDialog):
         self.cmb_type.addItems(["RectSolid", "RectHollow", "CircleSolid", "CircleHollow", "ISection"])
         self.ed_name = QLineEdit()
 
-        self.sp1 = QDoubleSpinBox(); self.sp1.setRange(0.001, 1e9); self.sp1.setDecimals(3)
-        self.sp2 = QDoubleSpinBox(); self.sp2.setRange(0.001, 1e9); self.sp2.setDecimals(3)
-        self.sp3 = QDoubleSpinBox(); self.sp3.setRange(0.001, 1e9); self.sp3.setDecimals(3)
-        self.sp4 = QDoubleSpinBox(); self.sp4.setRange(0.001, 1e9); self.sp4.setDecimals(3)
-        self.sp5 = QDoubleSpinBox(); self.sp5.setRange(0.001, 1e9); self.sp5.setDecimals(3)
+        self.sp1 = QDoubleSpinBox(); self.sp1.setRange(0.001, 1e9); self.sp1.setDecimals(1)
+        self.sp2 = QDoubleSpinBox(); self.sp2.setRange(0.001, 1e9); self.sp2.setDecimals(1)
+        self.sp3 = QDoubleSpinBox(); self.sp3.setRange(0.001, 1e9); self.sp3.setDecimals(1)
+        self.sp4 = QDoubleSpinBox(); self.sp4.setRange(0.001, 1e9); self.sp4.setDecimals(1)
+        self.sp5 = QDoubleSpinBox(); self.sp5.setRange(0.001, 1e9); self.sp5.setDecimals(1)
 
         self.lbl_p1 = QLabel("Param1")
         self.lbl_p2 = QLabel("Param2")
@@ -378,7 +378,7 @@ class SectionManagerDialog(QDialog):
                 props = circle_hollow(p1, p2)
             else:
                 props = i_section(p1, p2, p3, p4)
-            self.lbl_props.setText(f"A={props.A:.3f} mm²   Iy={props.Iy:.3f} mm⁴   Iz={props.Iz:.3f} mm⁴   J={props.J:.3f} mm⁴")
+            self.lbl_props.setText(f"A={props.A:.0f} mm²   Iy={props.Iy:.0f} mm⁴   Iz={props.Iz:.0f} mm⁴   J={props.J:.0f} mm⁴")
         except Exception:
             self.lbl_props.setText("A= -   Iy= -   Iz= -   J= -")
 
