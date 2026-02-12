@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
-from PyQt6.QtWidgets import QStyle, QFileDialog
+from PyQt6.QtWidgets import QStyle, QFileDialog, QHeaderView
 
 import sys
 import traceback
@@ -336,7 +336,13 @@ class MainWindow(QMainWindow):
         self.tbl_assign.setAlternatingRowColors(True)
         self.tbl_assign.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tbl_assign.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.tbl_assign.horizontalHeader().setStretchLastSection(True)
+        header = self.tbl_assign.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         lay_assign.addWidget(self.tbl_assign)
         self.gb_assign.setVisible(False)
 
@@ -736,6 +742,9 @@ class MainWindow(QMainWindow):
             self.tbl_assign.setCellWidget(row, 4, cmb_color)
             if selected_member_uid == m.uid:
                 self.tbl_assign.selectRow(row)
+        self.tbl_assign.setColumnWidth(0, 60)
+        self.tbl_assign.setColumnWidth(1, 64)
+        self.tbl_assign.setColumnWidth(4, 48)
         self.tbl_assign.blockSignals(False)
 
     def _on_assign_row_changed(self, member_uid: str, row: int):
