@@ -1128,21 +1128,60 @@ class MainWindow(QMainWindow):
 
     def refresh_tree(self):
         self.tree.clear()
-        root_pts = QTreeWidgetItem(["Points"])
-        root_mem = QTreeWidgetItem(["Members"])
-        self.tree.addTopLevelItem(root_pts)
-        self.tree.addTopLevelItem(root_mem)
+
+        root_pts = QTreeWidgetItem([f"Points ({len(self.project.points)})"])
+        root_mem = QTreeWidgetItem([f"Members ({len(self.project.members)})"])
+        root_mats = QTreeWidgetItem([f"Materials ({len(self.project.materials)})"])
+        root_secs = QTreeWidgetItem([f"Sections ({len(self.project.sections)})"])
+        root_constraints = QTreeWidgetItem(["Constraints"])
+        root_bushes = QTreeWidgetItem(["Bush"])
+        root_loads = QTreeWidgetItem(["Loads"])
+
+        for root in (root_pts, root_mem, root_mats, root_secs, root_constraints, root_bushes, root_loads):
+            self.tree.addTopLevelItem(root)
 
         for p in self.project.sorted_points():
-            it = QTreeWidgetItem([f"{p.name}  x={p.x:.3f}"])
-            root_pts.addChild(it)
+            root_pts.addChild(QTreeWidgetItem([f"{p.name}  x={p.x:.3f}"]))
 
         mems = sorted(self.project.members.values(), key=lambda m: m.name)
         for m in mems:
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
-            it = QTreeWidgetItem([f"{m.name}  L={abs(xj-xi):.3f}"])
-            root_mem.addChild(it)
+            mat_name = self.project.materials.get(m.material_uid).name if m.material_uid in self.project.materials else "?"
+            sec_name = self.project.sections.get(m.section_uid).name if m.section_uid in self.project.sections else "?"
+            root_mem.addChild(QTreeWidgetItem([f"{m.name}  L={abs(xj-xi):.3f}  Mat={mat_name}  Sec={sec_name}"]))
+
+        for mat in sorted(self.project.materials.values(), key=lambda x: x.name.lower()):
+            root_mats.addChild(QTreeWidgetItem([f"{mat.name} (E={mat.E:.0f}, fy={mat.sigma_y:.1f})"]))
+
+        for sec in sorted(self.project.sections.values(), key=lambda x: x.name.lower()):
+            root_secs.addChild(QTreeWidgetItem([f"{sec.name} ({sec.type}, A={sec.A:.2f}, Iz={sec.Iz:.2f})"]))
+
+        for p in self.project.sorted_points():
+            if p.constraints:
+                summary = ", ".join(f"{dof}:{c.value:.3g}" for dof, c in sorted(p.constraints.items()) if getattr(c, "enabled", True))
+                if summary:
+                    root_constraints.addChild(QTreeWidgetItem([f"{p.name}: {summary}"]))
+
+        for p in self.project.sorted_points():
+            bushes = getattr(p, "bushes", {}) or {}
+            if bushes:
+                summary = ", ".join(f"{dof}:k={b.stiffness:.3g}" for dof, b in sorted(bushes.items()) if getattr(b, "enabled", True))
+                if summary:
+                    root_bushes.addChild(QTreeWidgetItem([f"{p.name}: {summary}"]))
+
+        active_case = self.project.active_load_case
+        for p in self.project.sorted_points():
+            nodals = [ld for ld in p.nodal_loads if ld.case == active_case]
+            if nodals:
+                summary = ", ".join(f"{ld.direction}={ld.value:.3g}" for ld in nodals)
+                root_loads.addChild(QTreeWidgetItem([f"{p.name}: {summary} ({active_case})"]))
+
+        for m in mems:
+            udls = [ld for ld in m.udl_loads if ld.case == active_case]
+            if udls:
+                summary = ", ".join(f"{ld.direction}:w1={ld.w1:.3g},w2={ld.w2:.3g}" for ld in udls)
+                root_loads.addChild(QTreeWidgetItem([f"{m.name}: {summary} ({active_case})"]))
 
         self.tree.expandAll()
 
