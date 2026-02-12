@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
 
         
         # ---------------- Ribbon (Word-like tabs with large icons) ----------------
-        icon_size = QSize(48, 48)
+        icon_size = QSize(40, 40)
 
         # Actions (wired in _connect)
         self.act_new = QAction(self._std_icon("SP_FileIcon", "SP_DirIcon"), "New", self)
@@ -171,6 +171,21 @@ class MainWindow(QMainWindow):
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
         self.act_open.setShortcut(QKeySequence.StandardKey.Open)
         self.act_new.setShortcut(QKeySequence.StandardKey.New)
+        self.act_delete.setShortcuts([
+            QKeySequence(Qt.Key.Key_Delete),
+            QKeySequence(Qt.Key.Key_Backspace),
+        ])
+
+        self.act_undo = QAction("Undo", self)
+        self.act_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        self.act_redo = QAction("Redo", self)
+        self.act_redo.setShortcuts([
+            QKeySequence.StandardKey.Redo,
+            QKeySequence("Ctrl+Y"),
+        ])
+        self.addAction(self.act_undo)
+        self.addAction(self.act_redo)
+        self.addAction(self.act_delete)
 
         # Ribbon widget
         from PyQt6.QtWidgets import QTabWidget, QToolButton, QGridLayout, QSizePolicy
@@ -250,7 +265,7 @@ class MainWindow(QMainWindow):
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Objects"])
         splitter.addWidget(self.tree)
-        self.tree.setMinimumWidth(240)
+        self.tree.setMinimumWidth(180)
 
         # center: canvas + results (stack)
         center = QWidget()
@@ -286,7 +301,7 @@ class MainWindow(QMainWindow):
 
         # right: property panel
         self.prop = QWidget()
-        self.prop.setMinimumWidth(520)
+        self.prop.setMinimumWidth(420)
         splitter.addWidget(self.prop)
         pr = QVBoxLayout(self.prop)
         pr.setContentsMargins(6, 6, 6, 6)
@@ -301,7 +316,8 @@ class MainWindow(QMainWindow):
         form = QFormLayout(gb)
         self.ed_x = QDoubleSpinBox()
         self.ed_x.setRange(-1e9, 1e9)
-        self.ed_x.setDecimals(0)
+        self.ed_x.setDecimals(1)
+        self.ed_x.setSingleStep(0.1)
         # Commit on Enter (editingFinished) instead of moving geometry on every
         # keystroke while typing.
         self.ed_x.setKeyboardTracking(False)
@@ -327,7 +343,7 @@ class MainWindow(QMainWindow):
         pr.addStretch(1)
 
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 980, 560])
+        splitter.setSizes([180, 1160, 420])
 
     def _connect(self):
         # --- File ---
@@ -344,6 +360,8 @@ class MainWindow(QMainWindow):
         self.act_select.triggered.connect(lambda: self.set_model_mode("select"))
         self.act_add_point.triggered.connect(lambda: self.set_model_mode("add_point"))
         self.act_delete.triggered.connect(self.delete_selected_points)
+        self.act_undo.triggered.connect(self.undo)
+        self.act_redo.triggered.connect(self.redo)
 
         # --- Libraries ---
         self.act_materials.triggered.connect(self.open_materials)
@@ -492,6 +510,10 @@ class MainWindow(QMainWindow):
     def repeat_last_model_action(self):
         # Phase-1: switches to continuous Add Point
         self.set_model_mode(self._last_model_mode)
+
+    @staticmethod
+    def _round_model_value(value: float) -> float:
+        return round(float(value), 1)
 
     # ---------------- Model actions ----------------
     def _schedule_refresh(self, full: bool = False):
@@ -684,7 +706,7 @@ class MainWindow(QMainWindow):
             self.tbl_assign.setItem(row, 0, id_item)
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
-            self.tbl_assign.setItem(row, 1, QTableWidgetItem(f"{abs(xj-xi):.3f}"))
+            self.tbl_assign.setItem(row, 1, QTableWidgetItem(f"{abs(xj-xi):.1f}"))
 
             cmb_mat = QComboBox()
             for uid, name in mat_items:
@@ -1006,7 +1028,7 @@ class MainWindow(QMainWindow):
     def on_point_added(self, x: float):
         before = self.project.to_dict()
         from ..core.model import Point
-        p = Point(x=x)
+        p = Point(x=self._round_model_value(x))
         self.project.points[p.uid] = p
         self._reselect_point_uid = p.uid
         if self.project.auto_members:
@@ -1021,7 +1043,7 @@ class MainWindow(QMainWindow):
         if uid not in self.project.points:
             return
         before = self.project.to_dict()
-        self.project.points[uid].x = new_x
+        self.project.points[uid].x = self._round_model_value(new_x)
         self._reselect_point_uid = uid
         if self.project.auto_members:
             self._rebuild_model_members()
@@ -1057,7 +1079,7 @@ class MainWindow(QMainWindow):
             m = self.project.members[mids[0]]
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
-            self.lbl_len.setText(f"{abs(xj-xi):.3f} mm")
+            self.lbl_len.setText(f"{abs(xj-xi):.1f} mm")
 
         if self.gb_assign.isVisible():
             self.tbl_assign.blockSignals(True)
@@ -1074,7 +1096,7 @@ class MainWindow(QMainWindow):
         pids = self.canvas.selected_point_uids()
         if len(pids) != 1:
             return
-        self.on_point_moved(pids[0], float(x))
+        self.on_point_moved(pids[0], self._round_model_value(x))
 
     # ---------------- Refresh ----------------
     def refresh_all(self):

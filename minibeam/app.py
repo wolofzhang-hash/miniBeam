@@ -10,5 +10,5 @@ def main():
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())

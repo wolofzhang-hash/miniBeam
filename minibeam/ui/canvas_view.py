@@ -301,7 +301,7 @@ class BeamCanvas(QGraphicsView):
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
             mid = (xi + xj) / 2.0
-            t = QGraphicsSimpleTextItem(f"{abs(xj-xi):.2f}")
+            t = QGraphicsSimpleTextItem(f"{abs(xj-xi):.1f}")
             t.setPos(mid - 10, -28)
             t.setBrush(Qt.GlobalColor.darkBlue)
             t.setZValue(5)
