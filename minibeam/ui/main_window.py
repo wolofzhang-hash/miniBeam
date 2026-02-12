@@ -230,26 +230,9 @@ class MainWindow(QMainWindow):
             mk_group("Background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
         ])
 
-        # Results: dropdown + plot
-        from PyQt6.QtWidgets import QComboBox
-        self.cmb_result_type = QComboBox()
-        self.cmb_result_type.addItems([
-            "Deflection",
-            "Rotation θ",
-            "Axial N",
-            "Shear V",
-            "Moment M",
-            "Torsion T",
-            "Torsion τ",
-            "Stress σ",
-            "Margin MS",
-        ])
-        self.cmb_result_type.setMinimumWidth(160)
-        self.cmb_result_type.setToolTip("Select result type")
-
         mk_tab("Solve & Results", [
             mk_group("Solve", [self.act_validate, self.act_solve]),
-            mk_group("Results", [self.cmb_result_type, self.act_show_results, self.act_export_csv, self.act_back_to_model]),
+            mk_group("Results", [self.act_show_results, self.act_export_csv, self.act_back_to_model]),
         ])
 
         mk_tab("Help", [
@@ -370,12 +353,6 @@ class MainWindow(QMainWindow):
         self.act_export_csv.triggered.connect(self.export_results_csv)
         self.act_help_pdf.triggered.connect(self.open_help_pdf)
         self.act_about.triggered.connect(self.show_about_dialog)
-        # Changing the dropdown should redraw if we are already in results view
-        if hasattr(self, 'cmb_result_type'):
-            self.cmb_result_type.currentTextChanged.connect(lambda _=None: (
-                self.show_results() if self.center_stack.currentWidget() == self.results_view else None
-            ))
-
         # --- Canvas signals ---
         self.canvas.selection_changed.connect(self.on_selection_changed)
         self.canvas.point_added.connect(self.on_point_added)
