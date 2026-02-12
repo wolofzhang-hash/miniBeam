@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Literal, Any
+from typing import Dict, List, Literal, Any
 import uuid
 
 Units = Literal["mm-N-Nmm"]
@@ -73,6 +73,7 @@ class Member:
     j_uid: str = ""
     material_uid: str = ""
     section_uid: str = ""
+    color: str = "#000000"
     udl_loads: List[MemberLoadUDL] = field(default_factory=list)
 
 @dataclass
@@ -87,8 +88,6 @@ class Project:
     members: Dict[str, Member] = field(default_factory=dict)  # uid->Member
     materials: Dict[str, Material] = field(default_factory=dict)
     sections: Dict[str, Section] = field(default_factory=dict)
-    active_material_uid: Optional[str] = None
-    active_section_uid: Optional[str] = None
     auto_members: bool = True
     load_cases: List[str] = field(default_factory=lambda: ["LC1"])
     active_load_case: str = "LC1"
@@ -161,8 +160,6 @@ class Project:
         """
         return {
             "units": self.units,
-            "active_material_uid": self.active_material_uid,
-            "active_section_uid": self.active_section_uid,
             "auto_members": self.auto_members,
             "load_cases": list(self.load_cases),
             "active_load_case": self.active_load_case,
@@ -180,8 +177,6 @@ class Project:
         """Restore a project from :meth:`to_dict`."""
         prj = Project()
         prj.units = d.get("units", prj.units)
-        prj.active_material_uid = d.get("active_material_uid")
-        prj.active_section_uid = d.get("active_section_uid")
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)
@@ -223,8 +218,6 @@ class Project:
         """
         return {
             "units": self.units,
-            "active_material_uid": self.active_material_uid,
-            "active_section_uid": self.active_section_uid,
             "auto_members": self.auto_members,
             "load_cases": list(self.load_cases),
             "active_load_case": self.active_load_case,
@@ -242,8 +235,6 @@ class Project:
         """Restore a project from :meth:`to_dict` output."""
         prj = Project()
         prj.units = d.get("units", prj.units)
-        prj.active_material_uid = d.get("active_material_uid")
-        prj.active_section_uid = d.get("active_section_uid")
         prj.auto_members = bool(d.get("auto_members", prj.auto_members))
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)

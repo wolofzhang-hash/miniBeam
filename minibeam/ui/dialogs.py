@@ -185,13 +185,11 @@ class MaterialManagerDialog(QDialog):
         right.addLayout(btns)
         self.btn_add = QPushButton("Add")
         self.btn_del = QPushButton("Delete")
-        self.btn_active = QPushButton("Set Active ★")
         self.btn_save_lib = QPushButton("Save to Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
         btns.addWidget(self.btn_del)
-        btns.addWidget(self.btn_active)
         btns.addWidget(self.btn_save_lib)
         btns.addStretch(1)
         btns.addWidget(self.btn_ok)
@@ -201,7 +199,6 @@ class MaterialManagerDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_add.clicked.connect(self.add_material)
         self.btn_del.clicked.connect(self.delete_material)
-        self.btn_active.clicked.connect(self.set_active)
         self.btn_save_lib.clicked.connect(self.save_library)
         self.list.currentRowChanged.connect(self.load_selected)
         # live update
@@ -220,8 +217,7 @@ class MaterialManagerDialog(QDialog):
         self.list.clear()
         selected_row = -1
         for mat in self.prj.materials.values():
-            star = " ★" if mat.uid == self.prj.active_material_uid else ""
-            self.list.addItem(f"{mat.name}{star} [{mat.uid}]")
+            self.list.addItem(f"{mat.name} [{mat.uid}]")
             if mat.uid == selected_uid:
                 selected_row = self.list.count() - 1
         if self.list.count() > 0:
@@ -271,18 +267,8 @@ class MaterialManagerDialog(QDialog):
         uid = self._current_uid()
         if not uid:
             return
-        if uid == self.prj.active_material_uid:
-            QMessageBox.warning(self, "Delete", "不能删除 Active material。请先切换 Active。")
-            return
         self.prj.materials.pop(uid, None)
         self.refresh()
-
-    def set_active(self):
-        uid = self._current_uid()
-        if not uid:
-            return
-        self.prj.active_material_uid = uid
-        self.refresh(selected_uid=uid)
 
     def save_library(self):
         try:
@@ -350,13 +336,11 @@ class SectionManagerDialog(QDialog):
         right.addLayout(btns)
         self.btn_add = QPushButton("Add / Update")
         self.btn_del = QPushButton("Delete")
-        self.btn_active = QPushButton("Set Active ★")
         self.btn_save_lib = QPushButton("Save to Library")
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
         btns.addWidget(self.btn_del)
-        btns.addWidget(self.btn_active)
         btns.addWidget(self.btn_save_lib)
         btns.addStretch(1)
         btns.addWidget(self.btn_ok)
@@ -366,7 +350,6 @@ class SectionManagerDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_add.clicked.connect(self.add_or_update)
         self.btn_del.clicked.connect(self.delete_section)
-        self.btn_active.clicked.connect(self.set_active)
         self.cmb_type.currentTextChanged.connect(self._update_hint)
         self.list.currentRowChanged.connect(self._load_selected)
         self.btn_save_lib.clicked.connect(self.save_library)
@@ -441,8 +424,7 @@ class SectionManagerDialog(QDialog):
         self.list.clear()
         selected_row = -1
         for sec in self.prj.sections.values():
-            star = " ★" if sec.uid == self.prj.active_section_uid else ""
-            self.list.addItem(f"{sec.name} ({sec.type}){star} [{sec.uid}]")
+            self.list.addItem(f"{sec.name} ({sec.type}) [{sec.uid}]")
             if sec.uid == selected_uid:
                 selected_row = self.list.count() - 1
         if self.list.count() > 0:
@@ -519,15 +501,5 @@ class SectionManagerDialog(QDialog):
         uid = self._current_uid()
         if not uid:
             return
-        if uid == self.prj.active_section_uid:
-            QMessageBox.warning(self, "Delete", "不能删除 Active section。请先切换 Active。")
-            return
         self.prj.sections.pop(uid, None)
         self.refresh()
-
-    def set_active(self):
-        uid = self._current_uid()
-        if not uid:
-            return
-        self.prj.active_section_uid = uid
-        self.refresh(selected_uid=uid)

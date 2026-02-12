@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QGraphicsSimpleTextItem, QMenu, QGraphicsPathItem, QGraphicsPixmapItem
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QTimer
-from PyQt6.QtGui import QPen, QAction, QPainterPath, QPolygonF, QBrush, QPixmap, QImage, QTransform
+from PyQt6.QtGui import QPen, QAction, QPainterPath, QPolygonF, QBrush, QPixmap, QImage, QTransform, QColor
 # sip is used only to detect deleted Qt objects (prevents RuntimeError on Windows).
 try:
     from PyQt6 import sip  # type: ignore
@@ -58,6 +58,12 @@ class MemberItem(QGraphicsLineItem):
         self.setPen(QPen(Qt.GlobalColor.black, 3))
         self.setFlag(QGraphicsLineItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setZValue(1)
+
+    def set_color(self, color: str):
+        q = QColor(color)
+        if not q.isValid():
+            q = QColor(Qt.GlobalColor.black)
+        self.setPen(QPen(q, 3))
 
 
 class BeamCanvas(QGraphicsView):
@@ -185,6 +191,7 @@ class BeamCanvas(QGraphicsView):
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
             it = MemberItem(m.uid, xi, xj)
+            it.set_color(getattr(m, "color", "#000000"))
             self.scene.addItem(it)
             self._member_items[m.uid] = it
 
@@ -215,6 +222,7 @@ class BeamCanvas(QGraphicsView):
             xi = self.project.points[m.i_uid].x
             xj = self.project.points[m.j_uid].x
             it.setLine(xi, 0, xj, 0)
+            it.set_color(getattr(m, "color", "#000000"))
 
         # Rebuild labels/markers (cheap enough, and avoids stale pointers)
         self._rebuild_labels_and_markers()

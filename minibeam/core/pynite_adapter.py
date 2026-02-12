@@ -131,13 +131,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
     base_diag_x = np.linspace(x_min, x_max, 101) if x_max > x_min else np.array([x_min], dtype=float)
     x_diag = np.array(_merge_unique_x([*base_diag_x.tolist(), *beam_xs]), dtype=float)
 
-    # Allowable stress
-    # Use active material (if set) else first material
-    if prj.active_material_uid and prj.active_material_uid in prj.materials:
-        sigma_y = prj.materials[prj.active_material_uid].sigma_y
-    else:
-        sigma_y = next(iter(prj.materials.values())).sigma_y
-    sigma_allow = sigma_y / max(prj.safety_factor, 1e-6)
+    # Allowable stress is member-dependent via assigned material.
 
     # (x0, x1, xg, DY, RZ, V, M, T, sigma, tau_torsion, margin)
     member_curves: List[Tuple[float, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
@@ -248,6 +242,8 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             RZ = np.full_like(xg, RZ[0] if RZ.size else 0.0)
 
         sec = prj.sections[m.section_uid]
+        mat = prj.materials[m.material_uid]
+        sigma_allow = mat.sigma_y / max(prj.safety_factor, 1e-6)
         # bending stress sigma = M*c/I (Mz uses Iz & c_z)
         sigma = np.array(M) * sec.c_z / max(sec.Iz, 1e-12)
         # torsion shear stress (simplified): tau = T*r/J, use r ~= c_z as a conservative proxy
