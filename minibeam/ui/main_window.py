@@ -358,6 +358,7 @@ class MainWindow(QMainWindow):
         self.canvas.background_calibration_ready.connect(self._on_bg_calib_ready)
         self.canvas.request_edit_constraints.connect(self.edit_constraints_selected)
         self.canvas.request_edit_nodal_loads.connect(self.edit_nodal_loads_selected)
+        self.canvas.request_edit_member_udl.connect(self.add_udl_to_selected_members)
         self.canvas.request_delete_selected_points.connect(self.delete_selected_points)
         self.tbl_assign.itemSelectionChanged.connect(self._on_assign_table_selection_changed)
 
@@ -1234,20 +1235,58 @@ class MainWindow(QMainWindow):
         self._push_snapshot("Edit loads", before, after)
         self._schedule_refresh()
     def add_udl_to_selected_members(self):
-        from PyQt6.QtWidgets import QInputDialog
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QDoubleSpinBox
         mids = self.canvas.selected_member_uids()
         if not mids:
             return
-        w, ok = QInputDialog.getDouble(self, "UDL", "w (N/mm, +Y upward):", 0.0, -1e12, 1e12, 0)
-        if not ok:
-            return
-        from ..core.model import MemberLoadUDL
+
         lc = self.project.active_load_case
+        w1_default = 0.0
+        w2_default = 0.0
+        m0 = self.project.members.get(mids[0])
+        if m0 is not None:
+            for ld in m0.udl_loads:
+                if ld.case == lc:
+                    w1_default = float(ld.w1)
+                    w2_default = float(ld.w2)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Distributed Load")
+        lay = QVBoxLayout(dlg)
+        form = QFormLayout()
+        lay.addLayout(form)
+
+        sb_w1 = QDoubleSpinBox()
+        sb_w1.setRange(-1e12, 1e12)
+        sb_w1.setDecimals(0)
+        sb_w1.setValue(w1_default)
+        form.addRow("w1 @ i-end (N/mm, +Y upward)", sb_w1)
+
+        sb_w2 = QDoubleSpinBox()
+        sb_w2.setRange(-1e12, 1e12)
+        sb_w2.setDecimals(0)
+        sb_w2.setValue(w2_default)
+        form.addRow("w2 @ j-end (N/mm, +Y upward)", sb_w2)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        from ..core.model import MemberLoadUDL
+        before = self.project.to_dict()
         for mid in mids:
             m = self.project.members.get(mid)
             if m is None:
                 continue
-            m.udl_loads.append(MemberLoadUDL(direction="Fy", w=float(w), case=lc))
+            m.udl_loads = [ld for ld in m.udl_loads if ld.case != lc]
+            m.udl_loads.append(MemberLoadUDL(direction="Fy", w1=float(sb_w1.value()), w2=float(sb_w2.value()), case=lc))
+
+        after = self.project.to_dict()
+        self._push_snapshot("Edit distributed loads", before, after)
         self._schedule_refresh()
 
     # ---------------- Solve / results wrappers ----------------

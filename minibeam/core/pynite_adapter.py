@@ -101,11 +101,10 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         for ld in p.nodal_loads:
             model.add_node_load(p.name, ld.direction, ld.value, case=ld.case)
 
-    # member loads (UDL only)
+    # member loads (linearly distributed in local y)
     for m in prj.members.values():
         for ld in m.udl_loads:
-            # distributed load in local y: 'Fy' with w1=w2
-            model.add_member_dist_load(m.name, ld.direction, ld.w, ld.w, case=ld.case)
+            model.add_member_dist_load(m.name, ld.direction, ld.w1, ld.w2, case=ld.case)
 
     # analyze
     model.analyze_linear(check_statics=False, check_stability=True)

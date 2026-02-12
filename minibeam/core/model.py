@@ -26,7 +26,9 @@ class NodalLoad:
 class MemberLoadUDL:
     # direction in PyNite naming: Fy
     direction: Literal["Fy"] = "Fy"
-    w: float = 0.0  # N/mm (positive +Y)
+    # N/mm (positive +Y), linearly varying from i-end to j-end
+    w1: float = 0.0
+    w2: float = 0.0
     case: str = "LC1"
 
 @dataclass

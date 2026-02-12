@@ -91,6 +91,7 @@ class BeamCanvas(QGraphicsView):
     request_delete_selected_points = pyqtSignal()
     request_edit_constraints = pyqtSignal()  # open DX/DY/RZ dialog
     request_edit_nodal_loads = pyqtSignal()  # open FY/MZ dialog
+    request_edit_member_udl = pyqtSignal()
     background_calibration_ready = pyqtSignal(object, object)  # QPointF, QPointF
 
     def __init__(self):
@@ -335,9 +336,66 @@ class BeamCanvas(QGraphicsView):
                 self.scene.addItem(rr)
                 self._labels.append(rr)
 
+        active_case = self.project.active_load_case
+
+        # Member distributed loads (active case): draw short arrow train + text.
+        max_udl = 0.0
+        for m in self.project.members.values():
+            for ld in m.udl_loads:
+                if ld.case == active_case:
+                    max_udl = max(max_udl, abs(ld.w1), abs(ld.w2))
+
+        if max_udl > 1e-12:
+            for m in self.project.members.values():
+                p_i = self.project.points.get(m.i_uid)
+                p_j = self.project.points.get(m.j_uid)
+                if p_i is None or p_j is None:
+                    continue
+                x1, x2 = float(p_i.x), float(p_j.x)
+                if x2 < x1:
+                    x1, x2 = x2, x1
+                Lm = max(1e-9, x2 - x1)
+                loads = [ld for ld in m.udl_loads if ld.case == active_case]
+                for ld in loads:
+                    arrow_count = 5
+                    for i in range(arrow_count):
+                        t = i / max(1, arrow_count - 1)
+                        x = x1 + t * Lm
+                        w = (1.0 - t) * ld.w1 + t * ld.w2
+                        if abs(w) <= 1e-12:
+                            continue
+                        arr_len = 14.0 + 18.0 * abs(w) / max_udl
+                        sign = -1.0 if w > 0 else 1.0
+                        y2 = sign * arr_len
+                        path = QPainterPath()
+                        path.moveTo(0, 0)
+                        path.lineTo(0, y2)
+                        head = 4.0
+                        path.moveTo(-head, y2 - sign * head)
+                        path.lineTo(0, y2)
+                        path.lineTo(head, y2 - sign * head)
+                        it = QGraphicsPathItem(path)
+                        it.setPen(QPen(Qt.GlobalColor.red, 1.4))
+                        it.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                        it.setFlag(QGraphicsPathItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                        it.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                        it.setAcceptHoverEvents(False)
+                        it.setZValue(16)
+                        it.setPos(x, 0)
+                        self.scene.addItem(it)
+                        self._labels.append(it)
+
+                    lbl = QGraphicsSimpleTextItem(f"q: {ld.w1:.1f}→{ld.w2:.1f}")
+                    lbl.setBrush(Qt.GlobalColor.red)
+                    lbl.setFlag(QGraphicsSimpleTextItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
+                    lbl.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                    lbl.setZValue(17)
+                    lbl.setPos((x1 + x2) * 0.5 - 28, 18)
+                    self.scene.addItem(lbl)
+                    self._labels.append(lbl)
+
         # Loads (force/moment symbols)
         # Scale by max magnitude in active load case, keep a nice pixel size.
-        active_case = self.project.active_load_case
         max_fx = 0.0
         max_fy = 0.0
         max_mz = 0.0
@@ -941,21 +999,26 @@ class BeamCanvas(QGraphicsView):
         # can sit above points visually; we still want the point to be the
         # target for right-click actions. Therefore search for a PointItem
         # under the cursor explicitly.
-        item = None
+        point_item = None
+        member_item = None
         for it in self.items(event.pos()):
-            if isinstance(it, PointItem):
-                item = it
-                break
+            if point_item is None and isinstance(it, PointItem):
+                point_item = it
+            if member_item is None and isinstance(it, MemberItem):
+                member_item = it
 
         # If right-clicked on a point, select it (single selection) so that
         # subsequent actions apply to the intended point.
-        if isinstance(item, PointItem):
+        if isinstance(point_item, PointItem):
             for it in self._point_items.values():
                 it.setSelected(False)
-            item.setSelected(True)
+            for it in self._member_items.values():
+                it.setSelected(False)
+            point_item.setSelected(True)
             # Emit selection change on the next tick (Qt doesn't always emit
             # synchronously for programmatic selection changes).
-            QTimer.singleShot(0, self.selection_changed.emit)            # Point context menu (edit, do not create duplicates)
+            QTimer.singleShot(0, self.selection_changed.emit)
+            # Point context menu (edit, do not create duplicates)
             a_c = QAction("Constraint...", self)
             a_c.triggered.connect(lambda: self.request_edit_constraints.emit())
             menu.addAction(a_c)
@@ -968,6 +1031,18 @@ class BeamCanvas(QGraphicsView):
             a_del = QAction("Delete Point", self)
             a_del.triggered.connect(lambda: self.request_delete_selected_points.emit())
             menu.addAction(a_del)
+
+        elif isinstance(member_item, MemberItem):
+            for it in self._point_items.values():
+                it.setSelected(False)
+            for it in self._member_items.values():
+                it.setSelected(False)
+            member_item.setSelected(True)
+            QTimer.singleShot(0, self.selection_changed.emit)
+
+            a_udl = QAction("Distributed Load...", self)
+            a_udl.triggered.connect(lambda: self.request_edit_member_udl.emit())
+            menu.addAction(a_udl)
 
         else:
             # Blank area context menu
