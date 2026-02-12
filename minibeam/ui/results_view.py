@@ -11,6 +11,30 @@ from ..core.pynite_adapter import SolveOutput
 
 
 class ResultsView(QWidget):
+
+    def _annotate_extrema_and_nodes(self, ax, x_plot, y_plot, x_nodes_plot=None):
+        x_arr = np.asarray(x_plot, dtype=float)
+        y_arr = np.asarray(y_plot, dtype=float)
+        if x_arr.size == 0 or y_arr.size == 0:
+            return
+
+        idx_max = int(np.argmax(y_arr))
+        idx_min = int(np.argmin(y_arr))
+        ax.scatter([x_arr[idx_max], x_arr[idx_min]], [y_arr[idx_max], y_arr[idx_min]], color="#d62728", s=20, zorder=3)
+        ax.annotate(f"max {y_arr[idx_max]:.3f}", (x_arr[idx_max], y_arr[idx_max]), textcoords="offset points", xytext=(6, 8), fontsize=8)
+        ax.annotate(f"min {y_arr[idx_min]:.3f}", (x_arr[idx_min], y_arr[idx_min]), textcoords="offset points", xytext=(6, -12), fontsize=8)
+
+        if x_nodes_plot is None:
+            x_nodes_plot = x_arr
+        nodes = np.asarray(x_nodes_plot, dtype=float)
+        if nodes.size == 0:
+            return
+        # Interpolate values at point-node locations so every point is labeled.
+        y_nodes = np.interp(nodes, x_arr, y_arr)
+        ax.scatter(nodes, y_nodes, color="#1f77b4", s=14, zorder=3)
+        for xn, yn in zip(nodes, y_nodes):
+            ax.annotate(f"{yn:.3f}", (xn, yn), textcoords="offset points", xytext=(4, 4), fontsize=7, color="#333333")
+
     def __init__(self):
         super().__init__()
         lay = QVBoxLayout(self)
@@ -81,8 +105,7 @@ class ResultsView(QWidget):
             ax.set_ylabel(f"DY x{def_scale:g} (mm)")
             ax.set_title("Deflection (scaled)")
 
-            idx = int(np.argmin(dy))
-            ax.annotate(f"min {dy[idx]:.3f}", (x[idx], dy[idx]))
+            self._annotate_extrema_and_nodes(ax, x, dy, _norm(out.x_nodes))
 
         elif rtype == "Rotation θ":
             xr, yr = _clip(out.x_diag, out.rz_diag)
@@ -91,6 +114,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("θz (rad)")
             ax.set_title("Rotation θ (RZ)")
+            self._annotate_extrema_and_nodes(ax, _norm(xr), yr, _norm(out.x_nodes))
 
         elif rtype == "Shear V":
             xv, yv = _clip(out.x_diag, out.V)
@@ -99,6 +123,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("V (N)")
             ax.set_title("Shear V (Fy)")
+            self._annotate_extrema_and_nodes(ax, _norm(xv), yv, _norm(out.x_nodes))
 
         elif rtype == "Axial N":
             xn, yn = _clip(out.x_diag, getattr(out, "N", np.zeros_like(out.x_diag)))
@@ -107,6 +132,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("N (N)")
             ax.set_title("Axial Force N (Fx)")
+            self._annotate_extrema_and_nodes(ax, _norm(xn), yn, _norm(out.x_nodes))
 
         elif rtype == "Moment M":
             xm, ym = _clip(out.x_diag, out.M)
@@ -115,6 +141,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("M (N·mm)")
             ax.set_title("Moment M (Mz)")
+            self._annotate_extrema_and_nodes(ax, _norm(xm), ym, _norm(out.x_nodes))
 
         elif rtype == "Torsion T":
             xt, yt = _clip(out.x_diag, getattr(out, "T", np.zeros_like(out.x_diag)))
@@ -123,6 +150,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("T (N·mm)")
             ax.set_title("Torsion / Torque (about X)")
+            self._annotate_extrema_and_nodes(ax, _norm(xt), yt, _norm(out.x_nodes))
 
         elif rtype == "Torsion τ":
             xtau, ytau = _clip(out.x_diag, getattr(out, "tau_torsion", np.zeros_like(out.x_diag)))
@@ -131,6 +159,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("tau (MPa)")
             ax.set_title("Torsion Shear Stress (simplified)")
+            self._annotate_extrema_and_nodes(ax, _norm(xtau), ytau, _norm(out.x_nodes))
 
         elif rtype == "Stress σ":
             xs, ys = _clip(out.x_diag, out.sigma)
@@ -139,6 +168,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("sigma (MPa)")
             ax.set_title("Bending Stress sigma = M*c/I")
+            self._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes))
 
         elif rtype == "Margin MS":
             xm2, ym2 = _clip(out.x_diag, out.margin)
@@ -148,8 +178,7 @@ class ResultsView(QWidget):
             ax.set_xlabel("x (mm)")
             ax.set_ylabel("MS")
             ax.set_title("Margin of Safety (allow/|sigma|-1)")
-            idx = int(np.argmin(out.margin))
-            ax.annotate(f"min {out.margin[idx]:.3f}", (out.x_diag[idx] - x0, out.margin[idx]))
+            self._annotate_extrema_and_nodes(ax, _norm(xm2), ym2, _norm(out.x_nodes))
 
         self.fig.subplots_adjust(left=0.10, right=0.98, bottom=0.12, top=0.90)
         

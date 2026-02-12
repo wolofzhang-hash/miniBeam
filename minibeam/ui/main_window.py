@@ -4,13 +4,14 @@ from PyQt6.QtWidgets import (
     QLabel, QMessageBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
     QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem
 )
-from PyQt6.QtCore import Qt, QTimer, QSize
-from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor
+from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
 from PyQt6.QtWidgets import QStyle, QFileDialog
 
 import sys
 import traceback
 import json
+from pathlib import Path
 import numpy as np
 
 from ..core.model import Project, Material, Section, Constraint, NodalLoad
@@ -31,6 +32,15 @@ from ..core.library_store import (
 
 
 class MainWindow(QMainWindow):
+    def _resource_base_dir(self) -> Path:
+        """Return runtime directory for adjacent resources (PyInstaller-safe)."""
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parents[2]
+
+    def _resource_path(self, relative_path: str) -> Path:
+        return self._resource_base_dir() / relative_path
+
     def _std_icon(self, primary: str, fallback: str):
         """Return a Qt standard icon with a safe fallback.
 
@@ -44,6 +54,9 @@ class MainWindow(QMainWindow):
         return self.style().standardIcon(sp)
     def __init__(self):
         super().__init__()
+        app_icon = self._resource_path("minibeam/assets/app_icon.svg")
+        if app_icon.exists():
+            self.setWindowIcon(QIcon(str(app_icon)))
         self.setWindowTitle("MiniBeam v0.2.0 (Phase-1)")
         self.resize(1400, 850)
 
@@ -117,7 +130,6 @@ class MainWindow(QMainWindow):
 
         self.act_select = QAction(self._std_icon("SP_ArrowCursor", "SP_ArrowForward"), "Select", self)
         self.act_add_point = QAction(self._std_icon("SP_FileDialogNewFolder", "SP_DirIcon"), "Add Point", self)
-        self.act_auto_members = QAction(self._std_icon("SP_BrowserReload", "SP_BrowserStop"), "Auto Members", self)
         self.act_delete = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCloseButton"), "Delete", self)
 
         self.act_materials = QAction(self._std_icon("SP_DriveFDIcon", "SP_DriveHDIcon"), "Materials…", self)
@@ -149,6 +161,8 @@ class MainWindow(QMainWindow):
         self.act_show_results = QAction(self._std_icon("SP_ComputerIcon", "SP_DesktopIcon"), "Results", self)
         self.act_back_to_model = QAction(self._std_icon("SP_ArrowBack", "SP_ArrowLeft"), "Back", self)
         self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Export CSV", self)
+        self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), "Help", self)
+        self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), "Copyright", self)
 
         # Shortcuts
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
@@ -199,7 +213,7 @@ class MainWindow(QMainWindow):
 
         mk_tab("Home", [
             mk_group("File", [self.act_new, self.act_open, self.act_save]),
-            mk_group("Model", [self.act_select, self.act_add_point, self.act_auto_members, self.act_delete]),
+            mk_group("Model", [self.act_select, self.act_add_point, self.act_delete]),
         ])
 
         mk_tab("Properties", [
@@ -237,6 +251,10 @@ class MainWindow(QMainWindow):
         mk_tab("Solve & Results", [
             mk_group("Solve", [self.act_validate, self.act_solve]),
             mk_group("Results", [self.cmb_result_type, self.act_show_results, self.act_export_csv, self.act_back_to_model]),
+        ])
+
+        mk_tab("Help", [
+            mk_group("Support", [self.act_help_pdf, self.act_about]),
         ])
 
         # main splitter
@@ -321,9 +339,6 @@ class MainWindow(QMainWindow):
         # --- Model ---
         self.act_select.triggered.connect(lambda: self.set_model_mode("select"))
         self.act_add_point.triggered.connect(lambda: self.set_model_mode("add_point"))
-        self.act_auto_members.setCheckable(True)
-        self.act_auto_members.setChecked(bool(self.project.auto_members))
-        self.act_auto_members.toggled.connect(self._toggle_auto_members)
         self.act_delete.triggered.connect(self.delete_selected_points)
 
         # --- Libraries ---
@@ -354,6 +369,8 @@ class MainWindow(QMainWindow):
         self.act_show_results.triggered.connect(self.show_results)
         self.act_back_to_model.triggered.connect(self.back_to_model)
         self.act_export_csv.triggered.connect(self.export_results_csv)
+        self.act_help_pdf.triggered.connect(self.open_help_pdf)
+        self.act_about.triggered.connect(self.show_about_dialog)
         # Changing the dropdown should redraw if we are already in results view
         if hasattr(self, 'cmb_result_type'):
             self.cmb_result_type.currentTextChanged.connect(lambda _=None: (
@@ -395,10 +412,6 @@ class MainWindow(QMainWindow):
         if d is None:
             return
         self.project = Project.from_dict(d)
-        # Keep toolbar state in sync
-        self.act_auto_members.blockSignals(True)
-        self.act_auto_members.setChecked(self.project.auto_members)
-        self.act_auto_members.blockSignals(False)
         self.last_results = None
         self.canvas.clear_support_reactions()
         self._schedule_refresh()
@@ -408,9 +421,6 @@ class MainWindow(QMainWindow):
         if d is None:
             return
         self.project = Project.from_dict(d)
-        self.act_auto_members.blockSignals(True)
-        self.act_auto_members.setChecked(self.project.auto_members)
-        self.act_auto_members.blockSignals(False)
         self.last_results = None
         self.canvas.clear_support_reactions()
         self._schedule_refresh()
@@ -548,16 +558,19 @@ class MainWindow(QMainWindow):
             self.cmb_load_type.setCurrentText("Nodal MZ")
         self.apply_load_to_selection()
 
-    def _toggle_auto_members(self, checked: bool):
-        """Toggle auto member rebuilding.
+    def open_help_pdf(self):
+        help_pdf = self._resource_path("help.pdf")
+        if not help_pdf.exists():
+            QMessageBox.warning(self, "Help", f"help.pdf not found\n{help_pdf}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(help_pdf)))
 
-        Bound to the toolbar check action.
-        """
-        self.project.auto_members = bool(checked)
-        if self.project.auto_members:
-            self.rebuild_members_now()
-        else:
-            self._schedule_refresh()
+    def show_about_dialog(self):
+        QMessageBox.information(
+            self,
+            "Copyright",
+            "copyright at 2026 by zwb and jcc",
+        )
 
     def rebuild_members_now(self):
         # Defer rebuild to avoid QGraphicsScene clear while mouse events are active
