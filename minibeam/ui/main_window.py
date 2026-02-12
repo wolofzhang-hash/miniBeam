@@ -2,7 +2,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget, QTreeWidgetItem,
     QLabel, QMessageBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QStackedWidget, QInputDialog
+    QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
@@ -75,27 +75,12 @@ class MainWindow(QMainWindow):
         # seed one material & one section
         mat = Material(name="steel", E=206000.0, G=79300.0, nu=0.3, rho=7.85e-6, sigma_y=235.0)
         self.project.materials[mat.uid] = mat
-        self.project.active_material_uid = mat.uid
 
         sp = rect_solid(100.0, 10.0)
         sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_z=sp.c_z)
         self.project.sections[sec.uid] = sec
-        self.project.active_section_uid = sec.uid
 
-        # Load user libraries (materials/sections) and merge by name.
-        # This lets you build a reusable library across projects.
-        try:
-            merge_by_name(self.project.materials, load_builtin_material_library(), name_attr="name")
-            merge_by_name(self.project.materials, load_material_library(), name_attr="name")
-            merge_by_name(self.project.sections, load_section_library(), name_attr="name")
-        except Exception:
-            pass
-
-        # Keep default active material as steel when available.
-        for m in self.project.materials.values():
-            if m.name.strip().lower() == "steel":
-                self.project.active_material_uid = m.uid
-                break
+        self._merge_libraries_into_project()
 
         self._build_ui()
         self._connect()
@@ -103,6 +88,15 @@ class MainWindow(QMainWindow):
         self._schedule_refresh()
 
         self.last_results: SolveOutput | None = None
+
+    def _merge_libraries_into_project(self):
+        # Keep material/section library data available across open/save cycles.
+        try:
+            merge_by_name(self.project.materials, load_builtin_material_library(), name_attr="name")
+            merge_by_name(self.project.materials, load_material_library(), name_attr="name")
+            merge_by_name(self.project.sections, load_section_library(), name_attr="name")
+        except Exception:
+            pass
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -128,8 +122,7 @@ class MainWindow(QMainWindow):
 
         self.act_materials = QAction(self._std_icon("SP_DriveFDIcon", "SP_DriveHDIcon"), "Materials…", self)
         self.act_sections = QAction(self._std_icon("SP_DriveDVDIcon", "SP_DriveHDIcon"), "Sections…", self)
-        self.act_assign_mat = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "Assign Material", self)
-        self.act_assign_sec = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "Assign Section", self)
+        self.act_assign_prop = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "Assign Property", self)
 
         self.act_add_dx = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Constraint", self)
         self.act_add_dy = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Add DY", self)
@@ -211,7 +204,7 @@ class MainWindow(QMainWindow):
 
         mk_tab("Properties", [
             mk_group("Libraries", [self.act_materials, self.act_sections]),
-            mk_group("Assign", [self.act_assign_mat, self.act_assign_sec]),
+            mk_group("Assign", [self.act_assign_prop]),
         ])
 
         mk_tab("Constraints & Loads", [
@@ -295,6 +288,16 @@ class MainWindow(QMainWindow):
         self.lbl_len = QLabel("-")
         form.addRow("Member length", self.lbl_len)
 
+        self.gb_assign = QGroupBox("Assign Property")
+        pr.addWidget(self.gb_assign)
+        lay_assign = QVBoxLayout(self.gb_assign)
+        self.tbl_assign = QTableWidget(0, 6)
+        self.tbl_assign.setHorizontalHeaderLabels(["Use", "Section ID", "Length", "Material", "Section", "Color"])
+        self.tbl_assign.verticalHeader().setVisible(False)
+        self.tbl_assign.setAlternatingRowColors(True)
+        lay_assign.addWidget(self.tbl_assign)
+        self.gb_assign.setVisible(False)
+
         pr.addStretch(1)
 
         splitter.setStretchFactor(1, 1)
@@ -321,8 +324,7 @@ class MainWindow(QMainWindow):
         # --- Libraries ---
         self.act_materials.triggered.connect(self.open_materials)
         self.act_sections.triggered.connect(self.open_sections)
-        self.act_assign_mat.triggered.connect(self.assign_material_to_selected_members)
-        self.act_assign_sec.triggered.connect(self.assign_section_to_selected_members)
+        self.act_assign_prop.triggered.connect(self.show_assign_property_panel)
 
         # --- Constraints / Loads (quick add) ---
         self.act_add_dx.triggered.connect(self.edit_constraints_selected)
@@ -471,6 +473,8 @@ class MainWindow(QMainWindow):
         }
 
         from ..core.model import Member
+        default_mat_uid = next(iter(self.project.materials.keys()), "")
+        default_sec_uid = next(iter(self.project.sections.keys()), "")
 
         new_members: dict[str, Member] = {}
 
@@ -483,8 +487,8 @@ class MainWindow(QMainWindow):
                 m = Member(
                     i_uid=i_uid,
                     j_uid=j_uid,
-                    material_uid=self.project.active_material_uid or "",
-                    section_uid=self.project.active_section_uid or "",
+                    material_uid=default_mat_uid,
+                    section_uid=default_sec_uid,
                 )
                 # Deterministic uid helps keep the canvas incremental even
                 # if you Undo/Redo or reload a file.
@@ -563,32 +567,92 @@ class MainWindow(QMainWindow):
             self._push_snapshot("Edit Sections", before, after)
             self._schedule_refresh()
 
-    def assign_material_to_selected_members(self):
-        mids = self.canvas.selected_member_uids()
-        if not mids:
-            return
-        if not self.project.active_material_uid:
-            QMessageBox.warning(self, "No material", "请先在 Materials 中选择一个 Active material。")
-            return
-        before = self.project.to_dict()
-        for uid in mids:
-            self.project.members[uid].material_uid = self.project.active_material_uid
-        after = self.project.to_dict()
-        self._push_snapshot("Assign Material", before, after)
-        self._schedule_refresh()
+    def _assignable_materials(self):
+        mats = list(self.project.materials.values())
+        if not mats:
+            return []
+        used = {m.material_uid for m in self.project.members.values() if m.material_uid in self.project.materials}
+        if mats[0].uid not in used:
+            used.add(mats[0].uid)
+        return [m for m in mats if m.uid in used]
 
-    def assign_section_to_selected_members(self):
-        mids = self.canvas.selected_member_uids()
-        if not mids:
+    def _assignable_sections(self):
+        secs = list(self.project.sections.values())
+        if not secs:
+            return []
+        used = {m.section_uid for m in self.project.members.values() if m.section_uid in self.project.sections}
+        if secs[0].uid not in used:
+            used.add(secs[0].uid)
+        return [s for s in secs if s.uid in used]
+
+    def show_assign_property_panel(self):
+        self.gb_assign.setVisible(True)
+        self.populate_assign_property_table()
+
+    def populate_assign_property_table(self):
+        materials = self._assignable_materials()
+        sections = self._assignable_sections()
+        mat_items = [(m.uid, m.name) for m in materials]
+        sec_items = [(s.uid, s.name) for s in sections]
+        color_items = ["#000000", "#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e"]
+
+        mems = sorted(self.project.members.values(), key=lambda m: m.name)
+        self.tbl_assign.blockSignals(True)
+        self.tbl_assign.setRowCount(len(mems))
+        for row, m in enumerate(mems):
+            cb = QCheckBox()
+            cb.setChecked(True)
+            self.tbl_assign.setCellWidget(row, 0, cb)
+            self.tbl_assign.setItem(row, 1, QTableWidgetItem(m.name or m.uid))
+            xi = self.project.points[m.i_uid].x
+            xj = self.project.points[m.j_uid].x
+            self.tbl_assign.setItem(row, 2, QTableWidgetItem(f"{abs(xj-xi):.3f}"))
+
+            cmb_mat = QComboBox()
+            for uid, name in mat_items:
+                cmb_mat.addItem(name, uid)
+            idx_mat = max(0, cmb_mat.findData(m.material_uid))
+            cmb_mat.setCurrentIndex(idx_mat)
+            cmb_mat.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
+            self.tbl_assign.setCellWidget(row, 3, cmb_mat)
+
+            cmb_sec = QComboBox()
+            for uid, name in sec_items:
+                cmb_sec.addItem(name, uid)
+            idx_sec = max(0, cmb_sec.findData(m.section_uid))
+            cmb_sec.setCurrentIndex(idx_sec)
+            cmb_sec.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
+            self.tbl_assign.setCellWidget(row, 4, cmb_sec)
+
+            cmb_color = QComboBox()
+            for c in color_items:
+                cmb_color.addItem(c, c)
+            cval = m.color if getattr(m, "color", "") else color_items[0]
+            idx_color = max(0, cmb_color.findData(cval))
+            cmb_color.setCurrentIndex(idx_color)
+            cmb_color.currentIndexChanged.connect(lambda _=None, mid=m.uid, r=row: self._on_assign_row_changed(mid, r))
+            self.tbl_assign.setCellWidget(row, 5, cmb_color)
+        self.tbl_assign.blockSignals(False)
+
+    def _on_assign_row_changed(self, member_uid: str, row: int):
+        m = self.project.members.get(member_uid)
+        if m is None:
             return
-        if not self.project.active_section_uid:
-            QMessageBox.warning(self, "No section", "请先在 Sections 中选择一个 Active section。")
+        cb = self.tbl_assign.cellWidget(row, 0)
+        if isinstance(cb, QCheckBox) and not cb.isChecked():
             return
+        cmb_mat = self.tbl_assign.cellWidget(row, 3)
+        cmb_sec = self.tbl_assign.cellWidget(row, 4)
+        cmb_color = self.tbl_assign.cellWidget(row, 5)
         before = self.project.to_dict()
-        for uid in mids:
-            self.project.members[uid].section_uid = self.project.active_section_uid
+        if isinstance(cmb_mat, QComboBox):
+            m.material_uid = cmb_mat.currentData() or ""
+        if isinstance(cmb_sec, QComboBox):
+            m.section_uid = cmb_sec.currentData() or ""
+        if isinstance(cmb_color, QComboBox):
+            m.color = cmb_color.currentData() or "#000000"
         after = self.project.to_dict()
-        self._push_snapshot("Assign Section", before, after)
+        self._push_snapshot("Assign Property", before, after)
         self._schedule_refresh()
 
     def apply_constraint_to_selected_points(self):
@@ -907,6 +971,8 @@ class MainWindow(QMainWindow):
     def refresh_all(self):
         self.project.rebuild_names()
         self.refresh_tree()
+        if getattr(self, "gb_assign", None) is not None and self.gb_assign.isVisible():
+            self.populate_assign_property_table()
         # Full sync only when topology changes. For point moves/attribute edits
         # we prefer incremental updates to avoid QGraphicsScene.clear during
         # interactive operations (can hard-crash Qt on Windows).
@@ -920,12 +986,8 @@ class MainWindow(QMainWindow):
         self.tree.clear()
         root_pts = QTreeWidgetItem(["Points"])
         root_mem = QTreeWidgetItem(["Members"])
-        root_mat = QTreeWidgetItem(["Materials"])
-        root_sec = QTreeWidgetItem(["Sections"])
         self.tree.addTopLevelItem(root_pts)
         self.tree.addTopLevelItem(root_mem)
-        self.tree.addTopLevelItem(root_mat)
-        self.tree.addTopLevelItem(root_sec)
 
         for p in self.project.sorted_points():
             it = QTreeWidgetItem([f"{p.name}  x={p.x:.3f}"])
@@ -937,16 +999,6 @@ class MainWindow(QMainWindow):
             xj = self.project.points[m.j_uid].x
             it = QTreeWidgetItem([f"{m.name}  L={abs(xj-xi):.3f}"])
             root_mem.addChild(it)
-
-        for mat in self.project.materials.values():
-            mark = " ★" if mat.uid == self.project.active_material_uid else ""
-            it = QTreeWidgetItem([f"{mat.name}{mark}"])
-            root_mat.addChild(it)
-
-        for sec in self.project.sections.values():
-            mark = " ★" if sec.uid == self.project.active_section_uid else ""
-            it = QTreeWidgetItem([f"{sec.name}{mark}"])
-            root_sec.addChild(it)
 
         self.tree.expandAll()
 
@@ -981,6 +1033,7 @@ class MainWindow(QMainWindow):
             with open(path, "r", encoding="utf-8") as f:
                 d = json.load(f)
             self.project = Project.from_dict(d)
+            self._merge_libraries_into_project()
             # Re-bind project to canvas
             self.canvas.project = self.project
             self.last_results = None
