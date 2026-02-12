@@ -568,22 +568,10 @@ class MainWindow(QMainWindow):
             self._schedule_refresh()
 
     def _assignable_materials(self):
-        mats = list(self.project.materials.values())
-        if not mats:
-            return []
-        used = {m.material_uid for m in self.project.members.values() if m.material_uid in self.project.materials}
-        if mats[0].uid not in used:
-            used.add(mats[0].uid)
-        return [m for m in mats if m.uid in used]
+        return list(self.project.materials.values())
 
     def _assignable_sections(self):
-        secs = list(self.project.sections.values())
-        if not secs:
-            return []
-        used = {m.section_uid for m in self.project.members.values() if m.section_uid in self.project.sections}
-        if secs[0].uid not in used:
-            used.add(secs[0].uid)
-        return [s for s in secs if s.uid in used]
+        return list(self.project.sections.values())
 
     def show_assign_property_panel(self):
         self.gb_assign.setVisible(True)
