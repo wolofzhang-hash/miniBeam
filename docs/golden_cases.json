@@ -1,0 +1,142 @@
+{
+  "version": "1.0",
+  "unit_system": {
+    "length": "mm",
+    "force": "N",
+    "moment": "N·mm",
+    "distributed_load": "N/mm"
+  },
+  "golden_cases": [
+    {
+      "id": "GC-01",
+      "name": "简支梁-跨中集中力",
+      "purpose": "校对支反力与跨中弯矩",
+      "structure": {
+        "type": "simply_supported_beam",
+        "span_mm": 1000,
+        "supports": [
+          {"x_mm": 0, "constraints": ["DX", "DY"]},
+          {"x_mm": 1000, "constraints": ["DY"]}
+        ]
+      },
+      "loads": [
+        {"type": "nodal", "x_mm": 500, "direction": "FY", "value_N": -1000}
+      ],
+      "expected": {
+        "reactions": {
+          "left_FY_N": 500,
+          "right_FY_N": 500
+        },
+        "internal": {
+          "max_Mz_Nmm": 250000,
+          "max_Mz_location_mm": 500,
+          "max_Vy_abs_N": 500
+        }
+      },
+      "acceptance_tolerance": {
+        "reaction_abs_error_N": 5,
+        "moment_abs_error_Nmm": 5000
+      }
+    },
+    {
+      "id": "GC-02",
+      "name": "悬臂梁-端部集中力",
+      "purpose": "校对固定端剪力与固定端弯矩",
+      "structure": {
+        "type": "cantilever_beam",
+        "span_mm": 1000,
+        "supports": [
+          {"x_mm": 0, "constraints": ["DX", "DY", "RZ"]}
+        ]
+      },
+      "loads": [
+        {"type": "nodal", "x_mm": 1000, "direction": "FY", "value_N": -1000}
+      ],
+      "expected": {
+        "reactions": {
+          "fixed_FY_N": 1000,
+          "fixed_MZ_Nmm": 1000000
+        },
+        "internal": {
+          "max_Mz_abs_Nmm": 1000000,
+          "max_Vy_abs_N": 1000
+        }
+      },
+      "acceptance_tolerance": {
+        "reaction_abs_error_N": 5,
+        "moment_abs_error_Nmm": 15000
+      }
+    },
+    {
+      "id": "GC-03",
+      "name": "简支梁-全跨均布荷载",
+      "purpose": "校对总荷载平衡与反力分配",
+      "structure": {
+        "type": "simply_supported_beam",
+        "span_mm": 1000,
+        "supports": [
+          {"x_mm": 0, "constraints": ["DX", "DY"]},
+          {"x_mm": 1000, "constraints": ["DY"]}
+        ]
+      },
+      "loads": [
+        {"type": "member_udl", "x_start_mm": 0, "x_end_mm": 1000, "w1_N_per_mm": -2.0, "w2_N_per_mm": -2.0}
+      ],
+      "expected": {
+        "equilibrium": {
+          "total_vertical_load_N": 2000,
+          "sum_reactions_FY_N": 2000
+        },
+        "reactions": {
+          "left_FY_N": 1000,
+          "right_FY_N": 1000
+        },
+        "internal": {
+          "max_Mz_Nmm": 250000,
+          "max_Mz_location_mm": 500,
+          "max_Vy_abs_N": 1000
+        }
+      },
+      "acceptance_tolerance": {
+        "reaction_abs_error_N": 10,
+        "equilibrium_abs_error_N": 10,
+        "moment_abs_error_Nmm": 10000
+      }
+    },
+    {
+      "id": "GC-04",
+      "name": "简支梁-双集中力对称布置",
+      "purpose": "校对对称工况下反力与恒弯矩区",
+      "structure": {
+        "type": "simply_supported_beam",
+        "span_mm": 1200,
+        "supports": [
+          {"x_mm": 0, "constraints": ["DX", "DY"]},
+          {"x_mm": 1200, "constraints": ["DY"]}
+        ]
+      },
+      "loads": [
+        {"type": "nodal", "x_mm": 400, "direction": "FY", "value_N": -600},
+        {"type": "nodal", "x_mm": 800, "direction": "FY", "value_N": -600}
+      ],
+      "expected": {
+        "reactions": {
+          "left_FY_N": 600,
+          "right_FY_N": 600
+        },
+        "internal": {
+          "constant_moment_region": {
+            "x_start_mm": 400,
+            "x_end_mm": 800,
+            "Mz_Nmm": 240000
+          },
+          "max_Vy_abs_N": 600
+        }
+      },
+      "acceptance_tolerance": {
+        "reaction_abs_error_N": 5,
+        "moment_abs_error_Nmm": 5000
+      }
+    }
+  ]
+}
