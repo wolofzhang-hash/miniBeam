@@ -426,6 +426,7 @@ class MaterialManagerDialog(QDialog):
 
     def accept(self):
         self.prj.materials = {uid: Material(**vars(mat)) for uid, mat in self.model_materials.items()}
+        self.prj.normalize_member_assignments()
         super().accept()
 
     def enable_library_edit(self):
@@ -890,4 +891,5 @@ class SectionManagerDialog(QDialog):
                 QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt(f"参数无效，无法保存：{e}", f"Invalid section parameters: {e}"))
                 return
         self.prj.sections = {uid: Section(**vars(sec)) for uid, sec in self.model_sections.items()}
+        self.prj.normalize_member_assignments()
         super().accept()

@@ -70,6 +70,23 @@ class TestProjectSerialization(unittest.TestCase):
         self.assertAlmostEqual(sec.shape_factor_z, 1.15)
 
 
+    def test_normalize_member_assignments_remaps_stale_uids(self):
+        prj = Project()
+        prj.points = {
+            "p1": Point(uid="p1", x=0.0),
+            "p2": Point(uid="p2", x=1000.0),
+        }
+        prj.materials = {"mat_new": Material(uid="mat_new", name="steel")}
+        prj.sections = {"sec_new": Section(uid="sec_new", name="pipe")}
+        prj.members = {
+            "m1": Member(uid="m1", i_uid="p1", j_uid="p2", material_uid="mat_old", section_uid="sec_old")
+        }
+
+        prj.normalize_member_assignments()
+
+        self.assertEqual(prj.members["m1"].material_uid, "mat_new")
+        self.assertEqual(prj.members["m1"].section_uid, "sec_new")
+
     def test_safety_factor_is_forced_to_one(self):
         legacy = {
             "points": {},

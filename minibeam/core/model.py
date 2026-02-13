@@ -186,6 +186,21 @@ class Project:
         for i, m in enumerate(mems_sorted, start=1):
             m.name = f"M{i}"
 
+    def normalize_member_assignments(self):
+        """Ensure member material/section references point to existing items.
+
+        When users delete and recreate materials/sections, stale UIDs can remain
+        on members. This helper remaps missing references to the first available
+        item so UI selections and validation stay consistent.
+        """
+        default_material_uid = next(iter(self.materials.keys()), "")
+        default_section_uid = next(iter(self.sections.keys()), "")
+        for member in self.members.values():
+            if member.material_uid not in self.materials:
+                member.material_uid = default_material_uid
+            if member.section_uid not in self.sections:
+                member.section_uid = default_section_uid
+
 
     # ---------------- Convenience helpers ----------------
     def set_constraint(self, point_uid: str, dof: str, enabled: bool, value: float = 0.0):
