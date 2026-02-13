@@ -1013,9 +1013,6 @@ class MainWindow(QMainWindow):
         self._schedule_refresh()
 
     def validate_only(self):
-        sfw = getattr(self, "sp_safety_factor", None)
-        if sfw is not None:
-            self.project.safety_factor = float(sfw.value())
         msgs = validate_project(self.project)
         if not msgs:
             QMessageBox.information(self, "Validate", self._tr("msg.validate_ok"))
@@ -1027,9 +1024,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Validate", text)
 
     def solve_model(self):
-        sfw = getattr(self, 'sp_safety_factor', None)
-        if sfw is not None:
-            self.project.safety_factor = float(sfw.value())
         msgs = validate_project(self.project)
         if any(m.level == "ERROR" for m in msgs):
             text = "\n".join([f"[{m.level}] {m.text}" for m in msgs])
