@@ -12,6 +12,8 @@ from PyQt6.QtWidgets import QStyle, QFileDialog, QHeaderView
 import sys
 import traceback
 import json
+import logging
+import os
 from pathlib import Path
 import numpy as np
 
@@ -114,8 +116,12 @@ class MainWindow(QMainWindow):
             merge_by_name(self.project.materials, load_builtin_material_library(), name_attr="name")
             merge_by_name(self.project.materials, load_material_library(), name_attr="name")
             merge_by_name(self.project.sections, load_section_library(), name_attr="name")
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.exception("Failed to merge material/section libraries into project")
+            if os.environ.get("MINIBEAM_DEV") == "1":
+                QMessageBox.critical(self, "Library Load Error", "".join(traceback.format_exception(exc)))
+            else:
+                self.statusBar().showMessage("库加载失败：已使用当前项目内置材料/截面。", 6000)
 
     # ---------------- UI ----------------
     def _build_ui(self):
