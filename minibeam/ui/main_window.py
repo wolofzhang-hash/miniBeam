@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
         self.project.materials[mat.uid] = mat
 
         sp = rect_solid(100.0, 10.0)
-        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_y=sp.c_y, c_z=sp.c_z, Zp_y=sp.Zp_y, Zp_z=sp.Zp_z, shape_factor_y=sp.shape_factor_y, shape_factor_z=sp.shape_factor_z, shape_factor_t=sp.shape_factor_t, Zp=sp.Zp_z, shape_factor=sp.shape_factor_z)
+        sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_y=sp.c_y, c_z=sp.c_z, Zp_y=sp.Zp_y, Zp_z=sp.Zp_z, shape_factor_y=sp.shape_factor_y, shape_factor_z=sp.shape_factor_z, shape_factor_t=sp.shape_factor_t, Zp=sp.Zp_z, shape_factor=sp.shape_factor_z, p1=100.0, p2=10.0)
         self.project.sections[sec.uid] = sec
 
         self._merge_libraries_into_project()

@@ -69,6 +69,33 @@ class TestProjectSerialization(unittest.TestCase):
         self.assertAlmostEqual(sec.shape_factor_y, 1.15)
         self.assertAlmostEqual(sec.shape_factor_z, 1.15)
 
+    def test_legacy_section_dimensions_are_recovered_for_rect(self):
+        legacy = {
+            "points": {},
+            "members": {},
+            "materials": {},
+            "sections": {
+                "sec1": {
+                    "uid": "sec1",
+                    "name": "legacy_rect",
+                    "type": "RectSolid",
+                    "A": 1000.0,
+                    "Iy": 8333.333333333334,
+                    "Iz": 833333.3333333334,
+                    "J": 31233.4,
+                    "c_y": 5.0,
+                    "c_z": 5.0,
+                }
+            },
+        }
+
+        prj = Project.from_dict(legacy)
+        sec = prj.sections["sec1"]
+
+        self.assertAlmostEqual(sec.p1, 100.0, places=3)
+        self.assertAlmostEqual(sec.p2, 10.0, places=3)
+
+
 
 if __name__ == "__main__":
     unittest.main()
