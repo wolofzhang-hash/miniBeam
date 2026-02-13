@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect()
         self._sync_background_visibility_action()
-        self._schedule_refresh()
+        self.request_refresh()
 
         self.last_results: SolveOutput | None = None
 
@@ -627,7 +627,7 @@ class MainWindow(QMainWindow):
         self.canvas.clear_support_reactions()
         if self.canvas_xz is not None:
             self.canvas_xz.clear_support_reactions()
-        self._schedule_refresh()
+        self.request_refresh()
 
     def redo(self):
         d = self.undo_stack.redo()
@@ -638,7 +638,7 @@ class MainWindow(QMainWindow):
         self.canvas.clear_support_reactions()
         if self.canvas_xz is not None:
             self.canvas_xz.clear_support_reactions()
-        self._schedule_refresh()
+        self.request_refresh()
 
     def repeat_last_model_action(self):
         # Phase-1: switches to continuous Add Point
@@ -649,23 +649,26 @@ class MainWindow(QMainWindow):
         return round(float(value), 1)
 
     # ---------------- Model actions ----------------
-    def _schedule_refresh(self, full: bool = False):
-        # If the canvas is in an active interaction (dragging, context menu
-        # nested event loop, etc.), defer refresh a bit longer. Clearing and
-        # rebuilding the QGraphicsScene during those interactions can hard
-        # crash Qt on Windows (0xC0000409).
-        if self._refresh_pending:
+    def _request_safe_ui_task(self, pending_attr: str, run_task, *, retry_ms: int = 25):
+        """Run UI update task through one deferred, interaction-safe path."""
+        if getattr(self, pending_attr):
             return
-        self._refresh_pending = True
+        setattr(self, pending_attr, True)
 
         def _try():
             # Keep waiting until interaction is done.
             if getattr(self.canvas, "is_interacting", None) and self.canvas.is_interacting():
-                QTimer.singleShot(25, _try)
+                QTimer.singleShot(retry_ms, _try)
                 return
-            self._do_refresh()
+            run_task()
 
         QTimer.singleShot(0, _try)
+
+    def request_refresh(self, full: bool = False):
+        # Keep parameter for future/compatibility; all refreshes follow the
+        # same deferred safe path.
+        _ = full
+        self._request_safe_ui_task("_refresh_pending", self._do_refresh)
 
     def _do_refresh(self):
         self._refresh_pending = False
@@ -676,23 +679,13 @@ class MainWindow(QMainWindow):
             self.canvas.select_point(self._reselect_point_uid)
             self._reselect_point_uid = None
 
-    def _schedule_rebuild(self):
-        if self._rebuild_pending:
-            return
-        self._rebuild_pending = True
-
-        def _try():
-            if getattr(self.canvas, "is_interacting", None) and self.canvas.is_interacting():
-                QTimer.singleShot(25, _try)
-                return
-            self._do_rebuild()
-
-        QTimer.singleShot(0, _try)
+    def request_rebuild(self):
+        self._request_safe_ui_task("_rebuild_pending", self._do_rebuild)
 
     def _do_rebuild(self):
         self._rebuild_pending = False
         self._rebuild_model_members()
-        self._schedule_refresh()
+        self.request_refresh()
 
     def _rebuild_model_members(self):
         """Rebuild members in the data model while preserving identities.
@@ -760,7 +753,7 @@ class MainWindow(QMainWindow):
             self.project.rebuild_names()
         after = self.project.to_dict()
         self._push_snapshot("Delete Point", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def _context_add_constraint(self, dof: str):
         # Right-click helper: apply a constraint to the currently selected point
@@ -825,7 +818,7 @@ class MainWindow(QMainWindow):
 
     def rebuild_members_now(self):
         # Defer rebuild to avoid QGraphicsScene clear while mouse events are active
-        self._schedule_rebuild()
+        self.request_rebuild()
 
     def open_materials(self):
         before = self.project.to_dict()
@@ -833,7 +826,7 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             after = self.project.to_dict()
             self._push_snapshot("Edit Materials", before, after)
-            self._schedule_refresh()
+            self.request_refresh()
 
     def open_sections(self):
         before = self.project.to_dict()
@@ -841,7 +834,7 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             after = self.project.to_dict()
             self._push_snapshot("Edit Sections", before, after)
-            self._schedule_refresh()
+            self.request_refresh()
 
     def _assignable_materials(self):
         return list(self.project.materials.values())
@@ -921,7 +914,7 @@ class MainWindow(QMainWindow):
             m.color = cmb_color.currentData() or "#000000"
         after = self.project.to_dict()
         self._push_snapshot("Assign Property", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def _on_assign_table_selection_changed(self):
         row = self.tbl_assign.currentRow()
@@ -948,7 +941,7 @@ class MainWindow(QMainWindow):
             p.constraints[dof] = Constraint(dof=dof, value=val, enabled=True)
         after = self.project.to_dict()
         self._push_snapshot("Apply Constraint", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def clear_constraints_on_selected_points(self):
         pids = self.canvas.selected_point_uids()
@@ -959,7 +952,7 @@ class MainWindow(QMainWindow):
             self.project.points[uid].constraints.clear()
         after = self.project.to_dict()
         self._push_snapshot("Clear Constraints", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def _set_active_load_case(self, case: str):
         self.project.active_load_case = case
@@ -993,7 +986,7 @@ class MainWindow(QMainWindow):
                 self.project.members[uid].udl_loads.append(MemberLoadUDL(direction="Fy", w=val, case=case))
         after = self.project.to_dict()
         self._push_snapshot("Apply Load", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def clear_loads_on_selection(self):
         case = self.project.active_load_case
@@ -1008,7 +1001,7 @@ class MainWindow(QMainWindow):
             m.udl_loads = [ld for ld in m.udl_loads if ld.case != case]
         after = self.project.to_dict()
         self._push_snapshot("Clear Loads", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def validate_only(self):
         msgs = validate_project(self.project)
@@ -1224,7 +1217,7 @@ class MainWindow(QMainWindow):
             self.project.rebuild_names()
         after = self.project.to_dict()
         self._push_snapshot("Add Point", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def on_point_moved(self, uid: str, new_x: float):
         if uid not in self.project.points:
@@ -1238,7 +1231,7 @@ class MainWindow(QMainWindow):
             self.project.rebuild_names()
         after = self.project.to_dict()
         self._push_snapshot("Move Point", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def on_selection_changed(self):
         pids = self.canvas.selected_point_uids()
@@ -1393,7 +1386,7 @@ class MainWindow(QMainWindow):
         if self.canvas_xz is not None:
             self.canvas_xz.clear_support_reactions()
         self.undo_stack.clear()
-        self._schedule_refresh()
+        self.request_refresh()
 
     def save_project(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Model", "", "MiniBeam Model (*.json)")
@@ -1427,7 +1420,7 @@ class MainWindow(QMainWindow):
             if self.canvas_xz is not None:
                 self.canvas_xz.clear_support_reactions()
             self.undo_stack.clear()
-            self._schedule_refresh(full=True)
+            self.request_refresh(full=True)
         except Exception as e:
             QMessageBox.critical(self, "Open Failed", str(e))
 
@@ -1504,7 +1497,7 @@ class MainWindow(QMainWindow):
 
         after = self.project.to_dict()
         self._push_snapshot("Edit constraints", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def edit_bushes_selected(self):
         """Open a dialog to edit nodal spring stiffness for selected point(s)."""
@@ -1581,7 +1574,7 @@ class MainWindow(QMainWindow):
 
         after = self.project.to_dict()
         self._push_snapshot("Edit bushes", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def edit_nodal_loads_selected(self):
         """Open a dialog to edit nodal loads for selected point(s) in active load case."""
@@ -1656,7 +1649,7 @@ class MainWindow(QMainWindow):
 
         after = self.project.to_dict()
         self._push_snapshot("Edit loads", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     def add_udl_to_selected_members(self):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QDoubleSpinBox
@@ -1711,7 +1704,7 @@ class MainWindow(QMainWindow):
 
         after = self.project.to_dict()
         self._push_snapshot("Edit distributed loads", before, after)
-        self._schedule_refresh()
+        self.request_refresh()
 
     # ---------------- Solve / results wrappers ----------------
     def solve_active(self):
@@ -1739,7 +1732,7 @@ class MainWindow(QMainWindow):
             return
         self.canvas.set_background(pix)
         self._sync_background_visibility_action()
-        self._schedule_refresh()
+        self.request_refresh()
 
     def calibrate_background(self):
         if getattr(self.canvas, "_bg_item", None) is None:
@@ -1756,7 +1749,7 @@ class MainWindow(QMainWindow):
             self.canvas.apply_background_calibration(p1, p2, float(dist))
         except Exception as e:
             QMessageBox.critical(self, "Background Calibration", f"Failed to apply calibration: {e}")
-        self._schedule_refresh()
+        self.request_refresh()
 
     def set_background_opacity(self):
         alpha, ok = QInputDialog.getDouble(self, "Background Opacity", "Opacity (0~1):", float(getattr(self.canvas, "_bg_opacity", 0.35)), 0.0, 1.0, 2)
@@ -1780,6 +1773,6 @@ class MainWindow(QMainWindow):
     def clear_background(self):
         self.canvas.clear_background()
         self._sync_background_visibility_action()
-        self._schedule_refresh()
+        self.request_refresh()
 
     # ---------------- Constraints dialog ----------------
