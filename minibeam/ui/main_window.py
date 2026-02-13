@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from ..core.model import Project, Material, Section, Constraint, Bush, NodalLoad
+from ..core.constants import ALL_DOFS, ALL_FORCE_DIRECTIONS
 from ..core.section_props import rect_solid, circle_solid, i_section
 from ..core.validation import validate_project
 from ..core.pynite_adapter import solve_with_pynite, PyniteSolverError, SolveOutput
@@ -1442,7 +1443,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        dof_order = ["DX", "DY", "DZ", "RX", "RY", "RZ"] if is_3d else ["DX", "DY", "RZ", "RX"]
+        dof_order = list(ALL_DOFS) if is_3d else ["DX", "DY", "RZ", "RX"]
         dof_labels = {
             "DX": "UX / DX",
             "DY": "UY / DY",
@@ -1514,7 +1515,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        dof_order = ["DX", "DY", "DZ", "RX", "RY", "RZ"] if is_3d else ["DX", "DY", "RZ", "RX"]
+        dof_order = list(ALL_DOFS) if is_3d else ["DX", "DY", "RZ", "RX"]
         dof_labels = {
             "DX": "KX / DX",
             "DY": "KY / DY",
@@ -1591,7 +1592,7 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox, QCheckBox, QWidget, QHBoxLayout, QDoubleSpinBox
 
         is_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
-        directions = ["FX", "FY", "FZ", "MX", "MY", "MZ"] if is_3d else ["FX", "FY", "MZ", "MX"]
+        directions = list(ALL_FORCE_DIRECTIONS) if is_3d else ["FX", "FY", "MZ", "MX"]
         direction_labels = {
             "FX": "FX (N)",
             "FY": "FY (N)",

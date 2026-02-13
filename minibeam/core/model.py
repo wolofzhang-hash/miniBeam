@@ -4,6 +4,8 @@ from typing import Dict, List, Literal, Any
 import uuid
 import math
 
+from .constants import DOF, FORCE_DIRECTION, MEMBER_UDL_DIRECTION
+
 Units = Literal["mm-N-Nmm"]
 
 def _uid() -> str:
@@ -65,37 +67,37 @@ def _upgrade_section(sec: "Section") -> "Section":
 
     return sec
 
-@dataclass
+@dataclass(slots=True)
 class Constraint:
     # DOF in PyNite naming.
-    dof: Literal["DX", "DY", "DZ", "RX", "RY", "RZ"]
+    dof: DOF
     value: float = 0.0
     enabled: bool = True
 
-@dataclass
+@dataclass(slots=True)
 class Bush:
     # directional spring stiffness in PyNite DOF naming
-    dof: Literal["DX", "DY", "DZ", "RX", "RY", "RZ"]
+    dof: DOF
     stiffness: float = 0.0
     enabled: bool = True
 
-@dataclass
+@dataclass(slots=True)
 class NodalLoad:
     # direction in PyNite naming
-    direction: Literal["FX", "FY", "FZ", "MX", "MY", "MZ"]
+    direction: FORCE_DIRECTION
     value: float
     case: str = "LC1"
 
-@dataclass
+@dataclass(slots=True)
 class MemberLoadUDL:
     # direction in PyNite naming: Fy
-    direction: Literal["Fy"] = "Fy"
+    direction: MEMBER_UDL_DIRECTION = "Fy"
     # N/mm (positive +Y), linearly varying from i-end to j-end
     w1: float = 0.0
     w2: float = 0.0
     case: str = "LC1"
 
-@dataclass
+@dataclass(slots=True)
 class Point:
     uid: str = field(default_factory=_uid)
     name: str = ""
@@ -104,7 +106,7 @@ class Point:
     bushes: Dict[str, Bush] = field(default_factory=dict)  # key dof
     nodal_loads: List[NodalLoad] = field(default_factory=list)
 
-@dataclass
+@dataclass(slots=True)
 class Material:
     uid: str = field(default_factory=_uid)
     name: str = "Steel"
@@ -114,7 +116,7 @@ class Material:
     rho: float = 7.85e-6 # tonne/mm^3 equiv (not used)
     sigma_y: float = 355.0  # N/mm^2
 
-@dataclass
+@dataclass(slots=True)
 class Section:
     uid: str = field(default_factory=_uid)
     name: str = "Rect100x10"
@@ -142,7 +144,7 @@ class Section:
     p3: float = 0.0
     p4: float = 0.0
 
-@dataclass
+@dataclass(slots=True)
 class Member:
     uid: str = field(default_factory=_uid)
     name: str = ""
@@ -153,12 +155,12 @@ class Member:
     color: str = "#000000"
     udl_loads: List[MemberLoadUDL] = field(default_factory=list)
 
-@dataclass
+@dataclass(slots=True)
 class LoadCombo:
     name: str = "COMB1"
     factors: Dict[str, float] = field(default_factory=lambda: {"LC1": 1.0})
 
-@dataclass
+@dataclass(slots=True)
 class Project:
     units: Units = "mm-N-Nmm"
     spatial_mode: Literal["2D", "3D"] = "2D"
@@ -294,7 +296,7 @@ class Project:
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)
         prj.active_combo = d.get("active_combo", prj.active_combo)
-        prj.safety_factor = 1.0
+        prj.safety_factor = float(d.get("safety_factor", prj.safety_factor))
 
         # Restore materials/sections first
         prj.materials = {}
