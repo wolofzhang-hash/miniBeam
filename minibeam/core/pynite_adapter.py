@@ -72,12 +72,8 @@ def compute_ms_from_internal_forces(
     sigma_bending_z = Mz * c_z / max(Iz, 1e-12)
     sigma_bending_y = My * c_y / max(Iy, 1e-12)
 
-    sigma_bending_elastic = np.sign(sigma_bending_z + sigma_bending_y) * np.sqrt(
-        sigma_bending_z**2 + sigma_bending_y**2
-    )
-    sigma_bending = np.sign(sigma_bending_z / k_z + sigma_bending_y / k_y) * np.sqrt(
-        (sigma_bending_z / k_z)**2 + (sigma_bending_y / k_y)**2
-    )
+    sigma_bending_elastic = np.sqrt(sigma_bending_z**2 + sigma_bending_y**2)
+    sigma_bending = np.sqrt((sigma_bending_z / k_z)**2 + (sigma_bending_y / k_y)**2)
 
     sigma_elastic = sigma_axial + sigma_bending_elastic
     sigma = sigma_axial + sigma_bending

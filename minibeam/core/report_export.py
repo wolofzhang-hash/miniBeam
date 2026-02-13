@@ -265,18 +265,23 @@ def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[st
             _arr_at(results.V, idx),
             _arr_at(results.M, idx),
             _arr_at(results.T, idx),
-            _arr_at(results.sigma, idx),
-            _arr_at(results.tau_torsion, idx),
+            _arr_at(results.sigma, idx, digits=0),
+            _arr_at(results.tau_torsion, idx, digits=0),
             _arr_at(results.margin, idx),
         ])
     return rows
 
 
-def _arr_at(arr: np.ndarray, idx: int) -> str:
+def _arr_at(arr: np.ndarray, idx: int, digits: int | None = None) -> str:
     a = np.asarray(arr, dtype=float)
     if idx >= a.size:
         return "-"
-    return f"{float(a[idx]):.6g}"
+    value = float(a[idx])
+    if digits is None:
+        return f"{value:.6g}"
+    if digits <= 0:
+        return str(int(np.rint(value)))
+    return f"{value:.{digits}f}"
 
 
 def _build_plot_image_tag(results: SolveOutput) -> str:
@@ -611,8 +616,8 @@ def _member_strength_table_html(project: Project, results: SolveOutput) -> str:
             "M": _arr_at(results.M, idx) if idx >= 0 else "-",
             "My": _arr_at(results.My, idx) if idx >= 0 else "-",
             "T": _arr_at(results.T, idx) if idx >= 0 else "-",
-            "sigma": f"{float(sigma[idx]):.6g}" if 0 <= idx < sigma.size else "-",
-            "tau_t": f"{float(tau_t[idx]):.6g}" if 0 <= idx < tau_t.size else "-",
+            "sigma": _arr_at(sigma, idx, digits=0) if 0 <= idx < sigma.size else "-",
+            "tau_t": _arr_at(tau_t, idx, digits=0) if 0 <= idx < tau_t.size else "-",
             "margin": f"{float(margin[idx]):.6g}" if 0 <= idx < margin.size else "-",
         })
 
