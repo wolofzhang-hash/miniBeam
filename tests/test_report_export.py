@@ -3,10 +3,18 @@ import numpy as np
 
 from minibeam.core.model import Project, Point, Member, Material, Section, Constraint, Bush, NodalLoad
 from minibeam.core.pynite_adapter import SolveOutput
-from minibeam.core.report_export import build_standard_report_html
+from minibeam.core.report_export import _format_fbd_value, build_standard_report_html
 
 
 class TestReportExport(unittest.TestCase):
+    def test_format_fbd_value_uses_integer_until_threshold(self):
+        self.assertEqual(_format_fbd_value(99999.9), "100000")
+        self.assertEqual(_format_fbd_value(-100000), "-100000")
+
+    def test_format_fbd_value_uses_scientific_over_threshold(self):
+        self.assertEqual(_format_fbd_value(100001), "1.00e+05")
+        self.assertEqual(_format_fbd_value(-250000), "-2.50e+05")
+
     def test_build_standard_report_html_contains_required_sections(self):
         prj = Project()
         p1 = Point(name="P1", x=0.0)
