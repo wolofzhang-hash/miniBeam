@@ -100,8 +100,9 @@ def compute_ms_from_internal_forces(
     margin = sigma_allow / np.maximum(np.abs(sigma_eq), 1e-9) - 1.0
 
     return {
-        "sigma": sigma,
+        "sigma": sigma_elastic,
         "sigma_elastic": sigma_elastic,
+        "sigma_plastic": sigma,
         "tau_t": tau_t,
         "margin": margin,
         "margin_elastic": margin_elastic,

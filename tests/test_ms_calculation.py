@@ -24,7 +24,8 @@ class TestMSCalculation(unittest.TestCase):
         )
 
         self.assertAlmostEqual(float(result["sigma_elastic"][0]), 103.0, places=6)
-        self.assertAlmostEqual(float(result["sigma"][0]), 94.669913, places=5)
+        self.assertAlmostEqual(float(result["sigma"][0]), 103.0, places=6)
+        self.assertAlmostEqual(float(result["sigma_plastic"][0]), 94.669913, places=5)
         self.assertAlmostEqual(float(result["tau_t"][0]), 75.0, places=6)
         self.assertAlmostEqual(float(result["margin_elastic"][0]), 0.230985, places=4)
         self.assertAlmostEqual(float(result["margin"][0]), 0.430859, places=4)

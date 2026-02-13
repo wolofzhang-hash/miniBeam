@@ -247,7 +247,7 @@ class ResultsView(QWidget):
             xs, ys = _clip(out.x_diag, out.sigma)
             ax.plot(_norm(xs), ys)
             _draw_zero_line()
-            _set_labels("x (mm)", "sigma (MPa)", "Normal Stress sigma = N/A + M*c/(I*k)")
+            _set_labels("x (mm)", "sigma (MPa)", "Normal Stress sigma = N/A + M*c/I")
             ResultsView._annotate_extrema_and_nodes(ax, _norm(xs), ys, _norm(out.x_nodes), text_scale=text_scale)
             x_for_click, y_for_click = _norm(xs), np.asarray(ys, dtype=float)
 
