@@ -265,6 +265,15 @@ class MaterialManagerDialog(QDialog):
             return self.library_materials.get(uid)
         return None
 
+    def _sync_current_item_label(self, scope: str, uid: str, name: str):
+        item = self.tree.currentItem()
+        if item is None:
+            return
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data != (scope, uid):
+            return
+        item.setText(0, f"{name} [{uid}]")
+
     def _set_editor_enabled(self, enabled: bool):
         for w in [self.ed_name, self.ed_E, self.ed_G, self.ed_nu, self.ed_fy]:
             w.setEnabled(enabled)
@@ -349,7 +358,10 @@ class MaterialManagerDialog(QDialog):
         m.G = float(self.ed_G.value())
         m.nu = float(self.ed_nu.value())
         m.sigma_y = float(self.ed_fy.value())
-        self.refresh(selected=(scope, uid))
+        # Avoid rebuilding the tree while user is typing. Rebuild triggers
+        # currentItemChanged -> load_selected(), which steals editor focus and
+        # causes the cursor to "jump" after each keystroke.
+        self._sync_current_item_label(scope, uid, m.name)
 
     def add_material(self):
         m = Material(name=self._txt("新材料", "Material"), E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
