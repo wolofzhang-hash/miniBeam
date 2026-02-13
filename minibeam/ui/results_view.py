@@ -266,8 +266,8 @@ class ResultsView(QWidget):
                     return
                 bands = [
                     (y_vals < 0.0, "#d62728", "MS < 0"),
-                    ((y_vals >= 0.0) & (y_vals <= 2.0), "#1f77b4", "0 ≤ MS ≤ 2"),
-                    (y_vals > 2.0, "#2ca02c", "MS > 2"),
+                    ((y_vals >= 0.0) & (y_vals <= 2.0), "#2ca02c", "0 ≤ MS ≤ 2"),
+                    (y_vals > 2.0, "#1f77b4", "MS > 2"),
                 ]
                 first_labeled = False
                 for mask, color, band_label in bands:
@@ -287,9 +287,7 @@ class ResultsView(QWidget):
                 _plot_ms_bands(xm2n, ms_plastic, label="MS Plastic Corrected", alpha=0.95, lw=2.4)
             _draw_zero_line()
             ax.axhline(2.0, linewidth=1, color="#66aa66", linestyle=":")
-            lo = float(min(np.min(ms_elastic), np.min(ms_plastic))) if ms_plastic.size else -1.0
-            hi = float(max(np.max(ms_elastic), np.max(ms_plastic))) if ms_plastic.size else 2.5
-            ax.set_ylim(min(-1.0, lo - 0.2), max(2.2, hi + 0.2))
+            ax.set_ylim(-1.0, 2.0)
             _set_labels("x (mm)", "MS", "Margin of Safety (Elastic + Plastic Corrected)")
             ResultsView._annotate_extrema_and_nodes(ax, xm2n, ms_plastic, _norm(out.x_nodes), text_scale=text_scale)
             ax.legend(loc="best", fontsize=max(7, int(round(8 * text_scale))))

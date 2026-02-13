@@ -305,11 +305,15 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
         ("ry (rad)", np.asarray(results.ry_diag, dtype=float)),
         ("σ (MPa)", np.asarray(results.sigma, dtype=float)),
         ("τt (MPa)", np.asarray(results.tau_torsion, dtype=float)),
-        ("MS (-)", np.asarray(results.margin, dtype=float)),
-        ("MS elastic (-)", np.asarray(results.margin_elastic, dtype=float)),
-        ("MS plastic (-)", np.asarray(results.margin_plastic, dtype=float)),
     ]
     specs = [(label, arr) for label, arr in specs if arr.size == x.size]
+
+    ms_elastic = np.asarray(getattr(results, "margin_elastic", results.margin), dtype=float)
+    ms_plastic = np.asarray(getattr(results, "margin_plastic", results.margin), dtype=float)
+    ms_available = ms_elastic.size == x.size and ms_plastic.size == x.size
+    if ms_available:
+        specs.append(("MS elastic + plastic (-)", np.array([], dtype=float)))
+
     if not specs:
         return "<div class='muted'>无图形数据</div>"
 
@@ -322,7 +326,35 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
             ax.axis("off")
             continue
         label, arr = specs[idx]
-        if arr.size == x.size:
+        if label == "MS elastic + plastic (-)" and ms_available:
+            for y_vals, curve_label, line_style, alpha in (
+                (ms_elastic, "MS elastic", "--", 0.9),
+                (ms_plastic, "MS plastic", "-", 0.95),
+            ):
+                bands = [
+                    (y_vals < 0.0, "#d62728"),
+                    ((y_vals >= 0.0) & (y_vals <= 2.0), "#2ca02c"),
+                    (y_vals > 2.0, "#1f77b4"),
+                ]
+                first_segment = True
+                for mask, color in bands:
+                    if np.count_nonzero(mask) < 2:
+                        continue
+                    ax.plot(
+                        x,
+                        np.ma.masked_where(~mask, y_vals),
+                        color=color,
+                        linewidth=1.6,
+                        linestyle=line_style,
+                        alpha=alpha,
+                        label=curve_label if first_segment else None,
+                    )
+                    first_segment = False
+            ax.axhline(0.0, linewidth=0.9, color="#333333")
+            ax.axhline(2.0, linewidth=0.9, color="#66aa66", linestyle=":")
+            ax.set_ylim(-1.0, 2.0)
+            ax.legend(fontsize=8, loc="best")
+        elif arr.size == x.size:
             ax.plot(x, arr, color="#2f6fab", linewidth=1.2)
         ax.set_title(label, fontsize=10)
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
