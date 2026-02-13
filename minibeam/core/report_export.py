@@ -361,7 +361,7 @@ def _draw_model_view(ax, project: Project, *, plane: str) -> None:
             ax.text(
                 p.x,
                 y2 + (0.02 * sign),
-                f"{ld.direction}={ld.value:.3g}",
+                f"{ld.direction}={_format_fbd_value(float(ld.value))}",
                 color="#c0392b",
                 ha="center",
                 va="bottom" if sign > 0 else "top",
@@ -423,7 +423,15 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             sign = -1 if w_avg < 0 else 1
             y2 = _scaled_arrow_len(w_avg, max_abs_load) * sign
             ax.annotate("", xy=(xm, y2), xytext=(xm, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
-            ax.text(xm, y2 + (0.02 * sign), f"w={w_avg:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
+            ax.text(
+                xm,
+                y2 + (0.02 * sign),
+                f"w={_format_fbd_value(w_avg)}",
+                color="#c0392b",
+                ha="center",
+                va="bottom" if sign > 0 else "top",
+                fontsize=8,
+            )
 
     for p in points:
         for ld in p.nodal_loads:
@@ -433,7 +441,15 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             sign = -1 if ld.value < 0 else 1
             y2 = _scaled_arrow_len(float(ld.value), max_abs_load) * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
-            ax.text(p.x, y2 + (0.02 * sign), f"{ld.direction}={ld.value:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
+            ax.text(
+                p.x,
+                y2 + (0.02 * sign),
+                f"{ld.direction}={_format_fbd_value(float(ld.value))}",
+                color="#c0392b",
+                ha="center",
+                va="bottom" if sign > 0 else "top",
+                fontsize=8,
+            )
 
         rxn = reactions.get(p.name, {}) if p.name else {}
         if not rxn:
@@ -445,7 +461,15 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             sign = 1 if val > 0 else -1
             y2 = -_scaled_arrow_len(val, max_abs_reaction) * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#27ae60", lw=1.5))
-            ax.text(p.x, y2 - (0.02 * sign), f"R{key}={val:.3g}", color="#27ae60", ha="center", va="top" if sign > 0 else "bottom", fontsize=8)
+            ax.text(
+                p.x,
+                y2 - (0.02 * sign),
+                f"R{key}={_format_fbd_value(val)}",
+                color="#27ae60",
+                ha="center",
+                va="top" if sign > 0 else "bottom",
+                fontsize=8,
+            )
 
         constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in (("DY", "RZ") if plane == "XY" else ("DZ", "RY")))
         if constrained:
@@ -479,6 +503,12 @@ def _build_model_fbd_image_tag(project: Project, results: SolveOutput) -> str:
     fig.savefig(buff, format="png")
     plt.close(fig)
     return f"<img alt='模型与FBD图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+
+
+def _format_fbd_value(value: float) -> str:
+    if abs(value) > 100000:
+        return f"{value:.2e}"
+    return f"{value:.0f}"
 
 
 def _critical_section_detail_html(project: Project, results: SolveOutput) -> str:
