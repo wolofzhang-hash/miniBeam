@@ -29,6 +29,9 @@ class TestReportExport(unittest.TestCase):
         mat = Material(name="S355")
         mat_unused = Material(name="UnusedMat")
         sec = Section(name="Rect", p1=100.0, p2=10.0)
+        sec.shape_factor_z = 1.5
+        sec.shape_factor_y = 1.2
+        sec.shape_factor_t = 1.1
         sec_unused = Section(name="UnusedSec")
         prj.materials[mat.uid] = mat
         prj.materials[mat_unused.uid] = mat_unused
@@ -85,6 +88,10 @@ class TestReportExport(unittest.TestCase):
         self.assertIn("MS_elastic", html)
         self.assertIn("MS_plastic", html)
         self.assertIn("σeq_elastic = sqrt(σ² + 3τ²)", html)
+        self.assertIn("sigma_plastic=", html)
+        self.assertIn("σeq_plastic = sqrt(sigma_plastic² + 3τ_plastic²)", html)
+        self.assertNotIn("σ(按弹性)", html)
+        self.assertNotIn("σ(弹性)", html)
         self.assertIn("data:image/png;base64", html)
         self.assertIn("-0.2", html)
         self.assertIn("DY=0, RZ=0", html)
@@ -109,6 +116,9 @@ class TestReportExport(unittest.TestCase):
 
         mat = Material(name="S355")
         sec = Section(name="Rect", p1=100.0, p2=10.0)
+        sec.shape_factor_z = 1.5
+        sec.shape_factor_y = 1.2
+        sec.shape_factor_t = 1.1
         prj.materials[mat.uid] = mat
         prj.sections[sec.uid] = sec
         m = Member(name="M1", i_uid=p1.uid, j_uid=p2.uid, material_uid=mat.uid, section_uid=sec.uid)
