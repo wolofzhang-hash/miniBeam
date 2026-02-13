@@ -79,6 +79,8 @@ MiniBeam 将模型转换为 PyNite FEModel3D 数据结构：
 
 ## 5. 关键计算公式（重点：MS）
 
+> 下面给出与当前程序一致的完整计算链路（含弹性/塑性修正与扭转-弯曲合成）。
+
 ### 5.1 允许应力
 允许应力按材料屈服与安全系数给出：
 
@@ -86,48 +88,137 @@ MiniBeam 将模型转换为 PyNite FEModel3D 数据结构：
 
 其中 FS > 0。
 
-### 5.2 组合正应力
-程序采用轴向正应力与弯曲正应力线性叠加：
+### 5.2 截面应力分项
+对每个采样位置 x，程序先取内力 `N(x), Mz(x), My(x), T(x)`，再按截面参数计算：
+
+1) 轴向正应力
 
 σ_axial = N / A
 
-σ_bending = M * c_z / Iz
+2) 绕 z 轴弯曲正应力
+
+σ_bending,z = Mz * c_z / Iz
+
+3) 绕 y 轴弯曲正应力
+
+σ_bending,y = My * c_y / Iy
+
+4) 两向弯曲正应力合成（避免直接代数相加过保守）
+
+σ_bending,elastic = sign(σ_bending,z + σ_bending,y) * sqrt(σ_bending,z^2 + σ_bending,y^2)
+
+σ_bending = sign(σ_bending,z/k_z + σ_bending,y/k_y) * sqrt((σ_bending,z/k_z)^2 + (σ_bending,y/k_y)^2)
+
+5) 扭转剪应力（工程简化）
+
+τ_t,elastic = T * r_max / J
+
+其中 r_max = max(c_y, c_z)。
+
+### 5.3 弹性值与塑性修正值
+程序支持截面形状系数修正（默认不小于 1.0）：
+
+k_z = max(shape_factor_z, 1)
+k_y = max(shape_factor_y, 1)
+k_t = max(shape_factor_t, 1)
+
+弹性正应力合成：
+
+σ_elastic = σ_axial + σ_bending,elastic
+
+塑性修正后的正应力：
 
 σ = σ_axial + σ_bending
 
-说明：
-- N 拉压号与 M 号按求解器返回约定。
-- 结果判定通常使用 |σ|。
+塑性修正后的扭转剪应力：
 
-### 5.3 扭转剪应力（简化）
-程序中采用保守近似：
+τ_t = τ_t,elastic / k_t
 
-τ_torsion = T * r / J
+### 5.4 von Mises 等效应力（含扭转）
+程序把正应力与扭转剪应力按 von Mises 合成：
 
-并取 r ≈ c_z。
+σ_eq,elastic = sqrt(σ_elastic^2 + 3 * τ_t,elastic^2)
 
-因此：
+σ_eq = sqrt(σ^2 + 3 * τ_t^2)
 
-τ_torsion ≈ T * c_z / J
+### 5.5 MS（Margin of Safety）定义
+分别输出弹性 MS 与塑性修正 MS：
 
-该表达用于快速工程评估，复杂薄壁截面建议使用更精细扭转理论。
+MS_elastic = σ_allow / |σ_eq,elastic| - 1
 
-### 5.4 MS（Margin of Safety）定义
-MiniBeam 输出的 MS 基于正应力判据：
+MS = σ_allow / |σ_eq| - 1
 
-MS = σ_allow / |σ| - 1
-
-解释：
+判定规则：
 - MS > 0：满足（有裕度）
 - MS = 0：临界
 - MS < 0：不满足（超限）
 
-### 5.5 反推关系（设计时常用）
-若目标要求 MS_target，则可反推允许实际应力：
+### 5.6 典型算例（逐步代入，便于校对）
+已知：
+- 材料屈服 `σ_y = 345 MPa`，安全系数 `FS = 1.5`
+- 内力：`N = 20,000 N`, `Mz = 8,000,000 N·mm`, `My = 1,500,000 N·mm`, `T = 600,000 N·mm`
+- 截面：`A = 2,500 mm^2`, `Iz = 8,000,000 mm^4`, `Iy = 3,000,000 mm^4`, `J = 500,000 mm^4`
+- 几何：`c_z = 75 mm`, `c_y = 40 mm`
+- 形状系数：`k_z = 1.12`, `k_y = 1.05`, `k_t = 1.20`
 
-|σ| <= σ_allow / (1 + MS_target)
+步骤 1：允许应力
 
-例如 MS_target = 0.25，则 |σ| <= 0.8 * σ_allow。
+σ_allow = 345 / 1.5 = 230 MPa
+
+步骤 2：轴向/弯曲应力
+
+σ_axial = 20000 / 2500 = 8.000 MPa
+
+σ_bending,z = 8000000 * 75 / 8000000 = 75.000 MPa
+
+σ_bending,y = 1500000 * 40 / 3000000 = 20.000 MPa
+
+步骤 3：正应力合成（弹性与修正）
+
+σ_bending,elastic = sqrt(75.000^2 + 20.000^2) = 77.621 MPa
+
+σ_bending = sqrt((75.000/1.12)^2 + (20.000/1.05)^2)
+          = sqrt(66.964^2 + 19.048^2)
+          = 69.621 MPa
+
+σ_elastic = 8.000 + 77.621 = 85.621 MPa
+
+σ = 8.000 + 69.621 = 77.621 MPa
+
+步骤 4：扭转剪应力
+
+r_max = max(75, 40) = 75 mm
+
+τ_t,elastic = 600000 * 75 / 500000 = 90.000 MPa
+
+τ_t = 90.000 / 1.20 = 75.000 MPa
+
+步骤 5：von Mises 等效应力
+
+σ_eq,elastic = sqrt(85.621^2 + 3*90.000^2)
+            = sqrt(7330.934 + 24300)
+            = sqrt(31630.934)
+            = 177.851 MPa
+
+σ_eq = sqrt(77.621^2 + 3*75.000^2)
+     = sqrt(6024.956 + 16875)
+     = sqrt(22899.956)
+     = 151.327 MPa
+
+步骤 6：MS
+
+MS_elastic = 230 / 177.851 - 1 = 0.2932
+
+MS = 230 / 151.327 - 1 = 0.5199
+
+结论：该工况下 `MS > 0`，满足强度要求；并且塑性修正后裕度由 `0.2932` 提升至 `0.5199`。
+
+### 5.7 设计反推关系（常用）
+若目标要求 `MS_target`，可反推允许等效应力：
+
+|σ_eq| <= σ_allow / (1 + MS_target)
+
+例如 `MS_target = 0.25`，则 `|σ_eq| <= 0.8 * σ_allow`。
 
 ---
 
