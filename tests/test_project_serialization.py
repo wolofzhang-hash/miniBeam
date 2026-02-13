@@ -87,7 +87,7 @@ class TestProjectSerialization(unittest.TestCase):
         self.assertEqual(prj.members["m1"].material_uid, "mat_new")
         self.assertEqual(prj.members["m1"].section_uid, "sec_new")
 
-    def test_safety_factor_is_forced_to_one(self):
+    def test_safety_factor_is_restored_from_file(self):
         legacy = {
             "points": {},
             "members": {},
@@ -98,7 +98,7 @@ class TestProjectSerialization(unittest.TestCase):
 
         prj = Project.from_dict(legacy)
 
-        self.assertAlmostEqual(prj.safety_factor, 1.0)
+        self.assertAlmostEqual(prj.safety_factor, 2.5)
 
     def test_legacy_section_dimensions_are_recovered_for_rect(self):
         legacy = {

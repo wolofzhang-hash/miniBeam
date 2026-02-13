@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 
 from .model import Project
+from .validation import apply_spatial_mode_constraints
 
 try:
     from Pynite import FEModel3D
@@ -156,6 +157,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
         raise PyniteSolverError("未安装 PyNiteFEA/Pynite。请先 `pip install PyNiteFEA`。")
 
     model = FEModel3D()
+    apply_spatial_mode_constraints(prj)
 
     pts_sorted = prj.sorted_points()
     # nodes
@@ -200,9 +202,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             p.name,
             support_DX=dx,
             support_DY=dy,
-            support_DZ=(True if is_2d_mode else dz),
+            support_DZ=dz,
             support_RX=rx,
-            support_RY=(True if is_2d_mode else ry),
+            support_RY=ry,
             support_RZ=rz,
         )
 
