@@ -147,9 +147,6 @@ class BeamCanvas(QGraphicsView):
         self._bg_calib_markers: List[QGraphicsEllipseItem] = []
         self._bg_calib_world: List[QPointF] = []
 
-        # Background calibration markers (in scene coords)
-        self._bg_calib_markers: List[QGraphicsEllipseItem] = []
-
         # zoom
         self._zoom = 1.0
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
