@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Literal, Any
 import uuid
+import math
 
 Units = Literal["mm-N-Nmm"]
 
@@ -28,6 +29,40 @@ def _upgrade_section(sec: "Section") -> "Section":
     # keep legacy fields synchronized to z-axis bending for compatibility.
     sec.Zp = sec.Zp_z
     sec.shape_factor = sec.shape_factor_z
+
+    # Recover wizard parameters for legacy projects/libraries where p1..p4 were
+    # not persisted (or were left as zeros).
+    if abs(float(getattr(sec, "p1", 0.0))) <= 0.0 and abs(float(getattr(sec, "p2", 0.0))) <= 0.0:
+        typ = str(getattr(sec, "type", "") or "")
+        A = float(getattr(sec, "A", 0.0) or 0.0)
+        Iy = float(getattr(sec, "Iy", 0.0) or 0.0)
+        Iz = float(getattr(sec, "Iz", 0.0) or 0.0)
+        c_z = float(getattr(sec, "c_z", 0.0) or 0.0)
+
+        try:
+            if typ == "RectSolid" and A > 0 and Iy > 0:
+                h = math.sqrt(max(12.0 * Iy / A, 0.0))
+                if h > 0:
+                    b = A / h
+                    sec.p1 = float(b)
+                    sec.p2 = float(h)
+            elif typ == "CircleSolid" and A > 0:
+                d = math.sqrt(max(4.0 * A / math.pi, 0.0))
+                if d > 0:
+                    sec.p1 = float(d)
+            elif typ == "ISection" and c_z > 0:
+                # At least restore depth from extreme fiber distance.
+                sec.p1 = float(2.0 * c_z)
+            elif typ == "RectHollow" and A > 0 and Iy > 0 and Iz > 0:
+                # No exact closed-form inverse here; keep zeros if uncertain.
+                pass
+            elif typ == "CircleHollow" and A > 0 and c_z > 0:
+                # Recover outer diameter from c_z when available.
+                sec.p1 = float(2.0 * c_z)
+        except Exception:
+            # Best-effort upgrade only.
+            pass
+
     return sec
 
 @dataclass
