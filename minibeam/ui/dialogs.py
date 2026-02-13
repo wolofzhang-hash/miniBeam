@@ -602,6 +602,9 @@ class SectionManagerDialog(QDialog):
             lbl.setVisible(visible)
             sp.setVisible(visible)
 
+        if self._loading_selection:
+            return
+
         if typ == "RectSolid":
             self.lbl_hint.setText(self._txt("实心矩形：参数1=b(mm)，参数2=h(mm)。参数3/4忽略。", "RectSolid: Param1=b(mm), Param2=h(mm). Param3/4 ignored."))
             self.ed_name.setText("Rect100x10")
@@ -705,9 +708,13 @@ class SectionManagerDialog(QDialog):
             props = i_section(h, bf, tf, tw)
 
         scope, uid = self._current_selection()
+        target_scope = "model"
         target_sections = self.model_sections
+        if scope == "library" and self._library_edit_enabled:
+            target_scope = "library"
+            target_sections = self.library_sections
 
-        if uid and uid in self.model_sections:
+        if uid and uid in target_sections:
             s = target_sections[uid]
             s.type = typ
             s.name = name
@@ -740,7 +747,7 @@ class SectionManagerDialog(QDialog):
                 p4=float(self.sp4.value()),
             )
             target_sections[s.uid] = s
-        self.refresh(selected=("model", s.uid))
+        self.refresh(selected=(target_scope, s.uid))
 
     def add_selected_library_to_model(self):
         scope, uid = self._current_selection()
@@ -863,5 +870,12 @@ class SectionManagerDialog(QDialog):
         self.refresh()
 
     def accept(self):
+        scope, uid = self._current_selection()
+        if uid and scope in {"model", "library"}:
+            try:
+                self.add_or_update()
+            except Exception as e:
+                QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt(f"参数无效，无法保存：{e}", f"Invalid section parameters: {e}"))
+                return
         self.prj.sections = {uid: Section(**vars(sec)) for uid, sec in self.model_sections.items()}
         super().accept()

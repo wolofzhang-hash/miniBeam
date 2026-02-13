@@ -64,8 +64,8 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
 
   <h2>4. 材料与截面信息</h2>
   {_table_html(['材料', 'E', 'G', 'nu', 'rho', 'σy'], material_rows)}
-  {_table_html(['截面', 'type', 'A', 'Iy', 'Iz', 'J', 'cy', 'cz'], section_rows)}
-  <h3>4.1 Member Assign 列表</h3>
+  {_table_html(['截面', 'type', '关键尺寸(mm)', 'A', 'Iy', 'Iz', 'J', 'cy', 'cz'], section_rows)}
+  <h3>4.1 单元属性</h3>
   {_table_html(['杆件', 'i-j', '材料', '截面'], member_assign_rows)}
   <h3>4.2 截面截图</h3>
   <div class=\"plot\">{sec_img_tag}</div>
@@ -165,8 +165,40 @@ def _section_rows(project: Project) -> list[list[str]]:
     for sec in sorted(project.sections.values(), key=lambda x: x.name):
         if sec.uid not in used_section_uids:
             continue
-        rows.append([sec.name, sec.type, f"{sec.A:.6g}", f"{sec.Iy:.6g}", f"{sec.Iz:.6g}", f"{sec.J:.6g}", f"{sec.c_y:.6g}", f"{sec.c_z:.6g}"])
+        rows.append([
+            sec.name,
+            sec.type,
+            _section_key_dimensions(sec),
+            f"{sec.A:.6g}",
+            f"{sec.Iy:.6g}",
+            f"{sec.Iz:.6g}",
+            f"{sec.J:.6g}",
+            f"{sec.c_y:.6g}",
+            f"{sec.c_z:.6g}",
+        ])
     return rows
+
+
+def _section_key_dimensions(sec: Section) -> str:
+    p1 = float(getattr(sec, "p1", 0.0))
+    p2 = float(getattr(sec, "p2", 0.0))
+    p3 = float(getattr(sec, "p3", 0.0))
+    p4 = float(getattr(sec, "p4", 0.0))
+    t = sec.type
+    if t == "RectSolid":
+        return f"b={p1:.6g}, h={p2:.6g}"
+    if t == "RectHollow":
+        return f"b={p1:.6g}, h={p2:.6g}, t={p3:.6g}"
+    if t == "CircleSolid":
+        return f"d={p1:.6g}"
+    if t == "CircleHollow":
+        return f"D={p1:.6g}, t={p2:.6g}"
+    if t == "ISection":
+        return f"h={p1:.6g}, bf={p2:.6g}, tf={p3:.6g}, tw={p4:.6g}"
+    vals = [v for v in [p1, p2, p3, p4] if abs(v) > 0.0]
+    if not vals:
+        return "-"
+    return ", ".join(f"p{i + 1}={v:.6g}" for i, v in enumerate([p1, p2, p3, p4]) if abs(v) > 0.0)
 
 
 def _member_assign_rows(project: Project) -> list[list[str]]:
