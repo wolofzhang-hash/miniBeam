@@ -261,10 +261,10 @@ def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[st
         rows.append([
             str(k),
             f"{float(x[idx]):.3f}",
-            _arr_at(results.N, idx),
-            _arr_at(results.V, idx),
-            _arr_at(results.M, idx),
-            _arr_at(results.T, idx),
+            _arr_at(results.N, idx, digits=0),
+            _arr_at(results.V, idx, digits=0),
+            _arr_at(results.M, idx, digits=0),
+            _arr_at(results.T, idx, digits=0),
             _arr_at(results.sigma, idx, digits=0),
             _arr_at(results.tau_torsion, idx, digits=0),
             _arr_at(results.margin, idx),
@@ -531,24 +531,48 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
     if sec is None:
         return "<div class='muted'>无关键截面详细算例数据</div>"
 
-    n_val = _arr_at(results.N, idx)
-    mz_val = _arr_at(results.M, idx)
-    my_val = _arr_at(results.My, idx)
-    t_val = _arr_at(results.T, idx)
-    sigma_val = _arr_at(results.sigma, idx)
-    tau_t_val = _arr_at(results.tau_torsion, idx)
+    n_raw = float(np.asarray(results.N, dtype=float)[idx])
+    mz_raw = float(np.asarray(results.M, dtype=float)[idx])
+    my_raw = float(np.asarray(results.My, dtype=float)[idx])
+    t_raw = float(np.asarray(results.T, dtype=float)[idx])
+    sigma_raw = float(np.asarray(results.sigma, dtype=float)[idx])
+    tau_t_raw = float(np.asarray(results.tau_torsion, dtype=float)[idx])
+
+    n_val = _arr_at(results.N, idx, digits=0)
+    mz_val = _arr_at(results.M, idx, digits=0)
+    my_val = _arr_at(results.My, idx, digits=0)
+    t_val = _arr_at(results.T, idx, digits=0)
+    sigma_val = _arr_at(results.sigma, idx, digits=0)
+    tau_t_val = _arr_at(results.tau_torsion, idx, digits=0)
     ms_val = _arr_at(results.margin, idx)
-    sigma_eq = np.sqrt(float(np.asarray(results.sigma, dtype=float)[idx]) ** 2 + 3.0 * float(np.asarray(results.tau_torsion, dtype=float)[idx]) ** 2)
+    sigma_eq = np.sqrt(sigma_raw ** 2 + 3.0 * tau_t_raw ** 2)
     mat = _first_used_material(project)
     sigma_allow = float(mat.sigma_y) if mat is not None else 0.0
+
+    sigma_axial = n_raw / max(float(sec.A), 1e-12)
+    sigma_bending = sigma_raw - sigma_axial
+    sigma_bending_z_raw = mz_raw * float(sec.c_z) / max(float(sec.Iz), 1e-12)
+    sigma_bending_y_raw = my_raw * float(sec.c_y) / max(float(sec.Iy), 1e-12)
+    sigma_bending_norm = np.hypot(sigma_bending_z_raw, sigma_bending_y_raw)
+    if sigma_bending_norm > 1e-12:
+        scale = sigma_bending / sigma_bending_norm
+        sigma_z_raw = sigma_bending_z_raw * scale
+        sigma_y_raw = sigma_bending_y_raw * scale
+    else:
+        sigma_z_raw = 0.0
+        sigma_y_raw = 0.0
+
+    sigma_z_val = str(int(np.rint(sigma_z_raw)))
+    sigma_y_val = str(int(np.rint(sigma_y_raw)))
+    sigma_eq_val = str(int(np.rint(sigma_eq)))
 
     rows = [
         ["最危险位置", f"x={float(x[idx]):.3f} mm"],
         ["采用截面", f"{sec.name} ({sec.type})"],
         ["内力输入", f"N={n_val}, Mz={mz_val}, My={my_val}, T={t_val}"],
         ["截面参数", f"A={sec.A:.6g}, Iz={sec.Iz:.6g}, Iy={sec.Iy:.6g}, J={sec.J:.6g}, cz={sec.c_z:.6g}, cy={sec.c_y:.6g}"],
-        ["应力结果", f"σ={sigma_val}, τt={tau_t_val}"],
-        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq:.6g} MPa"],
+        ["应力结果", f"σz={sigma_z_val}, σy={sigma_y_val}, σ={sigma_val}, τt={tau_t_val}"],
+        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq_val} MPa"],
         ["许用应力", f"σallow = fy = {sigma_allow:.6g} MPa"],
         ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
     ]
@@ -611,11 +635,11 @@ def _member_strength_table_html(project: Project, results: SolveOutput) -> str:
             "material": mat.name if mat else "-",
             "section": sec.name if sec else "-",
             "sigma_allow": f"{float(mat.sigma_y):.6g}" if mat else "-",
-            "N": _arr_at(results.N, idx) if idx >= 0 else "-",
-            "V": _arr_at(results.V, idx) if idx >= 0 else "-",
-            "M": _arr_at(results.M, idx) if idx >= 0 else "-",
-            "My": _arr_at(results.My, idx) if idx >= 0 else "-",
-            "T": _arr_at(results.T, idx) if idx >= 0 else "-",
+            "N": _arr_at(results.N, idx, digits=0) if idx >= 0 else "-",
+            "V": _arr_at(results.V, idx, digits=0) if idx >= 0 else "-",
+            "M": _arr_at(results.M, idx, digits=0) if idx >= 0 else "-",
+            "My": _arr_at(results.My, idx, digits=0) if idx >= 0 else "-",
+            "T": _arr_at(results.T, idx, digits=0) if idx >= 0 else "-",
             "sigma": _arr_at(sigma, idx, digits=0) if 0 <= idx < sigma.size else "-",
             "tau_t": _arr_at(tau_t, idx, digits=0) if 0 <= idx < tau_t.size else "-",
             "margin": f"{float(margin[idx]):.6g}" if 0 <= idx < margin.size else "-",
