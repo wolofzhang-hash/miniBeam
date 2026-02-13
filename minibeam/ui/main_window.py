@@ -539,7 +539,8 @@ class MainWindow(QMainWindow):
         for key in button_keys:
             for lang in ("zh", "en"):
                 max_text_w = max(max_text_w, fm.horizontalAdvance(tr(lang, key)))
-        fixed_w = max(74, max_text_w + 28)
+        # Keep ribbon buttons more compact: roughly half of previous baseline width.
+        fixed_w = max(37, (max_text_w + 28) // 2)
         for btn in self._ribbon_buttons:
             btn.setMinimumWidth(fixed_w)
 
