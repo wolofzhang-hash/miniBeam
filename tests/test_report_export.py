@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 
-from minibeam.core.model import Project, Point, Member, Material, Section, Constraint
+from minibeam.core.model import Project, Point, Member, Material, Section, Constraint, Bush, NodalLoad
 from minibeam.core.pynite_adapter import SolveOutput
 from minibeam.core.report_export import build_standard_report_html
 
@@ -12,8 +12,11 @@ class TestReportExport(unittest.TestCase):
         p1 = Point(name="P1", x=0.0)
         p2 = Point(name="P2", x=1000.0)
         p1.constraints["DY"] = Constraint(dof="DY", enabled=True, value=0.0)
+        p1.constraints["RZ"] = Constraint(dof="RZ", enabled=True, value=0.0)
+        p1.bushes["DX"] = Bush(dof="DX", enabled=True, stiffness=1200.0)
         prj.points[p1.uid] = p1
         prj.points[p2.uid] = p2
+        p2.nodal_loads.append(NodalLoad(direction="FY", value=-500.0, case="LC1"))
 
         mat = Material(name="S355")
         sec = Section(name="Rect")
@@ -51,10 +54,15 @@ class TestReportExport(unittest.TestCase):
 
         self.assertIn("项目摘要", html)
         self.assertIn("荷载 / 边界条件", html)
+        self.assertIn("建模截图与 FBD", html)
+        self.assertIn("材料与截面信息", html)
+        self.assertIn("生成时间", html)
         self.assertIn("峰值表", html)
         self.assertIn("关键截面验算", html)
         self.assertIn("data:image/png;base64", html)
         self.assertIn("-0.2", html)
+        self.assertIn("DY=0, RZ=0", html)
+        self.assertIn("DX:k=1200", html)
 
 
 if __name__ == "__main__":
