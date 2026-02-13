@@ -592,6 +592,7 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
     is_circular = str(getattr(sec, "type", "")).startswith("Circle")
     if is_circular:
         sigma_elastic_raw = sigma_axial_raw + np.sqrt(sigma_z_raw ** 2 + sigma_y_raw ** 2)
+        sigma_plastic_raw = sigma_axial_raw + np.sqrt((sigma_z_raw / k_z) ** 2 + (sigma_y_raw / k_y) ** 2)
     else:
         sigma_elastic_raw = max(
             abs(sigma_axial_raw + sigma_z_raw + sigma_y_raw),
@@ -599,14 +600,21 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
             abs(sigma_axial_raw - sigma_z_raw + sigma_y_raw),
             abs(sigma_axial_raw - sigma_z_raw - sigma_y_raw),
         )
+        sigma_plastic_raw = max(
+            abs(sigma_axial_raw + sigma_z_raw / k_z + sigma_y_raw / k_y),
+            abs(sigma_axial_raw + sigma_z_raw / k_z - sigma_y_raw / k_y),
+            abs(sigma_axial_raw - sigma_z_raw / k_z + sigma_y_raw / k_y),
+            abs(sigma_axial_raw - sigma_z_raw / k_z - sigma_y_raw / k_y),
+        )
     r_max = max(float(sec.c_y), float(sec.c_z), 1e-9)
     tau_t_elastic_raw = t_raw * r_max / max(float(sec.J), 1e-12)
     sigma_eq_elastic_raw = np.sqrt(sigma_elastic_raw ** 2 + 3.0 * tau_t_elastic_raw ** 2)
-    sigma_eq_plastic_raw = np.sqrt(sigma_elastic_raw ** 2 + 3.0 * tau_t_raw ** 2)
+    sigma_eq_plastic_raw = np.sqrt(sigma_plastic_raw ** 2 + 3.0 * tau_t_raw ** 2)
 
     sigma_z_val = str(int(np.rint(sigma_z_raw)))
     sigma_y_val = str(int(np.rint(sigma_y_raw)))
     sigma_elastic_val = str(int(np.rint(sigma_elastic_raw)))
+    sigma_plastic_val = str(int(np.rint(sigma_plastic_raw)))
     tau_t_elastic_val = str(int(np.rint(tau_t_elastic_raw)))
     sigma_eq_elastic_val = str(int(np.rint(sigma_eq_elastic_raw)))
     sigma_eq_plastic_val = str(int(np.rint(sigma_eq_plastic_raw)))
@@ -617,9 +625,9 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
         ["内力输入", f"N={n_val}, Mz={mz_val}, My={my_val}, T={t_val}"],
         ["截面参数", f"A={sec.A:.6g}, Iz={sec.Iz:.6g}, Iy={sec.Iy:.6g}, J={sec.J:.6g}, cz={sec.c_z:.6g}, cy={sec.c_y:.6g}"],
         ["应力结果(弹性)", f"σz={sigma_z_val}, σy={sigma_y_val}, σ={sigma_elastic_val}, τt={tau_t_elastic_val}"],
-        ["应力结果(塑性修正)", f"σ(按弹性)={sigma_elastic_val}, τt_plastic={tau_t_val}"],
+        ["应力结果(塑性修正)", f"sigma_plastic={sigma_plastic_val}, τt_plastic={tau_t_val}"],
         ["等效应力(弹性)", f"σeq_elastic = sqrt(σ² + 3τ²) = {sigma_eq_elastic_val} MPa"],
-        ["等效应力(塑性)", f"σeq_plastic = sqrt(σ(弹性)² + 3τ_plastic²) = {sigma_eq_plastic_val} MPa"],
+        ["等效应力(塑性)", f"σeq_plastic = sqrt(sigma_plastic² + 3τ_plastic²) = {sigma_eq_plastic_val} MPa"],
         ["许用应力", f"σallow = fy = {sigma_allow:.6g} MPa"],
         ["安全裕度(弹性)", f"MS_elastic = σallow/|σeq_elastic|-1 = {ms_elastic_val}"],
         ["安全裕度(塑性)", f"MS_plastic = σallow/|σeq_plastic|-1 = {ms_plastic_val}"],
