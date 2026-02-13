@@ -25,6 +25,7 @@ from ..core.pynite_adapter import solve_with_pynite, PyniteSolverError, SolveOut
 from .canvas_view import BeamCanvas
 from .dialogs import MaterialManagerDialog, SectionManagerDialog
 from .results_view import ResultsView, ResultsGridDialog
+from .i18n import LANG_ZH, tr
 from ..core.undo import UndoStack
 from ..core.library_store import (
     load_builtin_material_library,
@@ -89,6 +90,9 @@ class MainWindow(QMainWindow):
         self._rebuild_pending = False
         self._reselect_point_uid: str | None = None
 
+        self.current_lang = LANG_ZH
+        self._tr = lambda key, **kwargs: tr(self.current_lang, key, **kwargs)
+
         self.project = Project()
         self.project.spatial_mode = self._choose_spatial_mode(default_mode="2D")
         self.undo_stack = UndoStack()
@@ -136,45 +140,45 @@ class MainWindow(QMainWindow):
         icon_size = QSize(40, 40)
 
         # Actions (wired in _connect)
-        self.act_new = QAction(self._std_icon("SP_FileIcon", "SP_DirIcon"), "New", self)
-        self.act_open = QAction(self._std_icon("SP_DialogOpenButton", "SP_DirOpenIcon"), "Open", self)
-        self.act_save = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Save", self)
+        self.act_new = QAction(self._std_icon("SP_FileIcon", "SP_DirIcon"), self._tr("action.new"), self)
+        self.act_open = QAction(self._std_icon("SP_DialogOpenButton", "SP_DirOpenIcon"), self._tr("action.open"), self)
+        self.act_save = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.save"), self)
 
-        self.act_select = QAction(self._std_icon("SP_ArrowCursor", "SP_ArrowForward"), "Select", self)
-        self.act_add_point = QAction(self._std_icon("SP_FileDialogNewFolder", "SP_DirIcon"), "Add Point", self)
-        self.act_delete = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCloseButton"), "Delete", self)
+        self.act_select = QAction(self._std_icon("SP_ArrowCursor", "SP_ArrowForward"), self._tr("action.select"), self)
+        self.act_add_point = QAction(self._std_icon("SP_FileDialogNewFolder", "SP_DirIcon"), self._tr("action.add_point"), self)
+        self.act_delete = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCloseButton"), self._tr("action.delete"), self)
 
-        self.act_materials = QAction(self._std_icon("SP_DriveFDIcon", "SP_DriveHDIcon"), "Materials…", self)
-        self.act_sections = QAction(self._std_icon("SP_DriveDVDIcon", "SP_DriveHDIcon"), "Sections…", self)
-        self.act_assign_prop = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "Assign Property", self)
+        self.act_materials = QAction(self._std_icon("SP_DriveFDIcon", "SP_DriveHDIcon"), self._tr("action.materials"), self)
+        self.act_sections = QAction(self._std_icon("SP_DriveDVDIcon", "SP_DriveHDIcon"), self._tr("action.sections"), self)
+        self.act_assign_prop = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), self._tr("action.assign_property"), self)
 
-        self.act_add_dx = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Constraint", self)
-        self.act_add_bush = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Bush", self)
+        self.act_add_dx = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), self._tr("action.constraint"), self)
+        self.act_add_bush = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), self._tr("action.bush"), self)
         self.act_add_dy = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Add DY", self)
         self.act_add_rz = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Add RZ", self)
 
-        self.act_add_fy = QAction(self._std_icon("SP_ArrowUp", "SP_ArrowForward"), "Load", self)
+        self.act_add_fy = QAction(self._std_icon("SP_ArrowUp", "SP_ArrowForward"), self._tr("action.load"), self)
         self.act_add_mz = QAction(self._std_icon("SP_ArrowUp", "SP_ArrowForward"), "Add MZ", self)
-        self.act_add_udl = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), "UDL", self)
+        self.act_add_udl = QAction(self._std_icon("SP_ArrowDown", "SP_ArrowForward"), self._tr("action.udl"), self)
 
         # Background
-        self.act_bg_import = QAction(self._std_icon("SP_DialogOpenButton", "SP_DirOpenIcon"), "Import", self)
-        self.act_bg_calibrate = QAction(self._std_icon("SP_BrowserReload", "SP_DialogResetButton"), "Calibrate", self)
-        self.act_bg_opacity = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), "Opacity", self)
-        self.act_bg_bw = QAction(self._std_icon("SP_FileDialogDetailedView", "SP_FileDialogListView"), "B/W", self)
+        self.act_bg_import = QAction(self._std_icon("SP_DialogOpenButton", "SP_DirOpenIcon"), self._tr("action.import"), self)
+        self.act_bg_calibrate = QAction(self._std_icon("SP_BrowserReload", "SP_DialogResetButton"), self._tr("action.calibrate"), self)
+        self.act_bg_opacity = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), self._tr("action.opacity"), self)
+        self.act_bg_bw = QAction(self._std_icon("SP_FileDialogDetailedView", "SP_FileDialogListView"), self._tr("action.bw"), self)
         self.act_bg_bw.setCheckable(True)
-        self.act_bg_visible = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), "Show Background", self)
+        self.act_bg_visible = QAction(self._std_icon("SP_DialogYesButton", "SP_DialogApplyButton"), self._tr("action.show_bg"), self)
         self.act_bg_visible.setCheckable(True)
         self.act_bg_visible.setChecked(True)
-        self.act_bg_clear = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCancelButton"), "Clear", self)
+        self.act_bg_clear = QAction(self._std_icon("SP_TrashIcon", "SP_DialogCancelButton"), self._tr("action.clear"), self)
 
-        self.act_validate = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), "Validate", self)
-        self.act_solve = QAction(self._std_icon("SP_MediaPlay", "SP_DialogOkButton"), "Solve", self)
+        self.act_validate = QAction(self._std_icon("SP_DialogApplyButton", "SP_DialogOkButton"), self._tr("action.validate"), self)
+        self.act_solve = QAction(self._std_icon("SP_MediaPlay", "SP_DialogOkButton"), self._tr("action.solve"), self)
 
-        self.act_show_results = QAction(self._std_icon("SP_ComputerIcon", "SP_DesktopIcon"), "Results", self)
-        self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), "Export CSV", self)
-        self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), "Help", self)
-        self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), "Copyright", self)
+        self.act_show_results = QAction(self._std_icon("SP_ComputerIcon", "SP_DesktopIcon"), self._tr("action.results"), self)
+        self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.export_csv"), self)
+        self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), self._tr("action.help"), self)
+        self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), self._tr("action.copyright"), self)
 
         # Shortcuts
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
@@ -185,9 +189,9 @@ class MainWindow(QMainWindow):
             QKeySequence(Qt.Key.Key_Backspace),
         ])
 
-        self.act_undo = QAction("Undo", self)
+        self.act_undo = QAction(self._tr("action.undo"), self)
         self.act_undo.setShortcut(QKeySequence.StandardKey.Undo)
-        self.act_redo = QAction("Redo", self)
+        self.act_redo = QAction(self._tr("action.redo"), self)
         self.act_redo.setShortcuts([
             QKeySequence.StandardKey.Redo,
             QKeySequence("Ctrl+Y"),
@@ -202,6 +206,11 @@ class MainWindow(QMainWindow):
         self.ribbon = QTabWidget()
         self.ribbon.setDocumentMode(True)
         root.addWidget(self.ribbon, 0)
+
+        self.cmb_language = QComboBox()
+        self.cmb_language.addItem(self._tr("language.zh"), "zh")
+        self.cmb_language.addItem(self._tr("language.en"), "en")
+        self.cmb_language.setCurrentIndex(0)
 
         def mk_group(title: str, items: list[object]) -> QWidget:
             gb = QGroupBox(title)
@@ -238,32 +247,33 @@ class MainWindow(QMainWindow):
             self.ribbon.addTab(w, name)
             return w
 
-        mk_tab("Home", [
-            mk_group("File", [self.act_new, self.act_open, self.act_save]),
-            mk_group("Model", [self.act_select, self.act_add_point, self.act_delete]),
+        mk_tab(self._tr("tab.home"), [
+            mk_group(self._tr("group.file"), [self.act_new, self.act_open, self.act_save]),
+            mk_group(self._tr("group.model"), [self.act_select, self.act_add_point, self.act_delete]),
+            mk_group(self._tr("group.language"), [self.cmb_language]),
         ])
 
-        mk_tab("Properties", [
-            mk_group("Libraries", [self.act_materials, self.act_sections]),
-            mk_group("Assign", [self.act_assign_prop]),
+        mk_tab(self._tr("tab.properties"), [
+            mk_group(self._tr("group.libraries"), [self.act_materials, self.act_sections]),
+            mk_group(self._tr("group.assign"), [self.act_assign_prop]),
         ])
 
-        mk_tab("Constraints & Loads", [
-            mk_group("Constraints", [self.act_add_dx, self.act_add_bush]),
-            mk_group("Loads", [self.act_add_fy, self.act_add_udl]),
+        mk_tab(self._tr("tab.constraints_loads"), [
+            mk_group(self._tr("group.constraints"), [self.act_add_dx, self.act_add_bush]),
+            mk_group(self._tr("group.loads"), [self.act_add_fy, self.act_add_udl]),
         ])
 
-        mk_tab("Background", [
-            mk_group("Background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
+        mk_tab(self._tr("tab.background"), [
+            mk_group(self._tr("group.background"), [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
         ])
 
-        mk_tab("Solve & Results", [
-            mk_group("Solve", [self.act_validate, self.act_solve]),
-            mk_group("Results", [self.act_show_results, self.act_export_csv]),
+        mk_tab(self._tr("tab.solve_results"), [
+            mk_group(self._tr("group.solve"), [self.act_validate, self.act_solve]),
+            mk_group(self._tr("group.results"), [self.act_show_results, self.act_export_csv]),
         ])
 
-        mk_tab("Help", [
-            mk_group("Support", [self.act_help_pdf, self.act_about]),
+        mk_tab(self._tr("tab.help"), [
+            mk_group(self._tr("group.support"), [self.act_help_pdf, self.act_about]),
         ])
 
         # main splitter
@@ -272,7 +282,7 @@ class MainWindow(QMainWindow):
 
         # left tree
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Objects"])
+        self.tree.setHeaderLabels([self._tr("objects")])
         splitter.addWidget(self.tree)
         self.tree.setMinimumWidth(180)
 
@@ -282,24 +292,27 @@ class MainWindow(QMainWindow):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(6)
         self.canvas = BeamCanvas(view_plane="XY")
+        self.canvas.set_translator(self._tr)
         self.canvas_xz: BeamCanvas | None = None
         if self.project.spatial_mode == "3D":
             self.canvas_xz = BeamCanvas(view_plane="XZ")
+            self.canvas_xz.set_translator(self._tr)
             self.canvas_xz.set_mode("readonly")
             self.canvas_xz.set_read_only_display(True)
             self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
             self.canvas_xz.setInteractive(False)
-        self.results_view = ResultsView()
+        self.results_view = ResultsView(self._tr)
         self.center_stack = QStackedWidget()
         self.canvas_page = QWidget()
         self.canvas_layout = QVBoxLayout(self.canvas_page)
         self.canvas_layout.setContentsMargins(0, 0, 0, 0)
         self.canvas_layout.setSpacing(4)
-        self.canvas_layout.addWidget(QLabel("XY View (editable)"))
+        self.xy_label = QLabel(self._tr("xy_view"))
+        self.canvas_layout.addWidget(self.xy_label)
         self.canvas_layout.addWidget(self.canvas, 1)
         self.xz_label: QLabel | None = None
         if self.canvas_xz is not None:
-            self.xz_label = QLabel("XZ View (display only)")
+            self.xz_label = QLabel(self._tr("xz_view"))
             self.xz_label.setStyleSheet("color:#666;")
             self.canvas_layout.addWidget(self.xz_label)
             self.canvas_layout.addWidget(self.canvas_xz, 1)
@@ -316,11 +329,11 @@ class MainWindow(QMainWindow):
         pr.setContentsMargins(6, 6, 6, 6)
         pr.setSpacing(8)
 
-        self.lbl_sel = QLabel("Selection: (none)")
+        self.lbl_sel = QLabel(self._tr("selection.none"))
         self.lbl_sel.setWordWrap(True)
         pr.addWidget(self.lbl_sel)
 
-        gb = QGroupBox("Point Properties")
+        gb = QGroupBox(self._tr("point_props"))
         pr.addWidget(gb)
         form = QFormLayout(gb)
         self.ed_x = QDoubleSpinBox()
@@ -334,9 +347,9 @@ class MainWindow(QMainWindow):
         form.addRow("X (mm)", self.ed_x)
 
         self.lbl_len = QLabel("-")
-        form.addRow("Member length", self.lbl_len)
+        form.addRow(self._tr("member_length"), self.lbl_len)
 
-        self.gb_assign = QGroupBox("Assign Property")
+        self.gb_assign = QGroupBox(self._tr("assign_prop"))
         pr.addWidget(self.gb_assign)
         lay_assign = QVBoxLayout(self.gb_assign)
         self.tbl_assign = QTableWidget(0, 5)
@@ -408,6 +421,7 @@ class MainWindow(QMainWindow):
         self.act_export_csv.triggered.connect(self.export_results_csv)
         self.act_help_pdf.triggered.connect(self.open_help_pdf)
         self.act_about.triggered.connect(self.show_about_dialog)
+        self.cmb_language.currentIndexChanged.connect(self._on_language_changed)
         # --- Canvas signals ---
         self.canvas.selection_changed.connect(self.on_selection_changed)
         self.canvas.point_added.connect(self.on_point_added)
@@ -424,15 +438,63 @@ class MainWindow(QMainWindow):
             self.canvas_xz.view_state_changed.connect(lambda st: self._sync_canvas_view(self.canvas_xz, self.canvas, st))
         self.tbl_assign.itemSelectionChanged.connect(self._on_assign_table_selection_changed)
 
+
+    def _on_language_changed(self, _idx: int):
+        lang = self.cmb_language.currentData()
+        if lang:
+            self.current_lang = lang
+            self._apply_language()
+
+    def _apply_language(self):
+        self._tr = lambda key, **kwargs: tr(self.current_lang, key, **kwargs)
+        self.act_new.setText(self._tr("action.new"))
+        self.act_open.setText(self._tr("action.open"))
+        self.act_save.setText(self._tr("action.save"))
+        self.act_select.setText(self._tr("action.select"))
+        self.act_add_point.setText(self._tr("action.add_point"))
+        self.act_delete.setText(self._tr("action.delete"))
+        self.act_materials.setText(self._tr("action.materials"))
+        self.act_sections.setText(self._tr("action.sections"))
+        self.act_assign_prop.setText(self._tr("action.assign_property"))
+        self.act_add_dx.setText(self._tr("action.constraint"))
+        self.act_add_bush.setText(self._tr("action.bush"))
+        self.act_add_fy.setText(self._tr("action.load"))
+        self.act_add_udl.setText(self._tr("action.udl"))
+        self.act_bg_import.setText(self._tr("action.import"))
+        self.act_bg_calibrate.setText(self._tr("action.calibrate"))
+        self.act_bg_opacity.setText(self._tr("action.opacity"))
+        self.act_bg_bw.setText(self._tr("action.bw"))
+        self._sync_background_visibility_action()
+        self.act_bg_clear.setText(self._tr("action.clear"))
+        self.act_validate.setText(self._tr("action.validate"))
+        self.act_solve.setText(self._tr("action.solve"))
+        self.act_show_results.setText(self._tr("action.results"))
+        self.act_export_csv.setText(self._tr("action.export_csv"))
+        self.act_help_pdf.setText(self._tr("action.help"))
+        self.act_about.setText(self._tr("action.copyright"))
+        self.act_undo.setText(self._tr("action.undo"))
+        self.act_redo.setText(self._tr("action.redo"))
+        self.tree.setHeaderLabels([self._tr("objects")])
+        self.xy_label.setText(self._tr("xy_view"))
+        if self.xz_label is not None:
+            self.xz_label.setText(self._tr("xz_view"))
+        self.lbl_sel.setText(self._tr("selection.none"))
+        self.gb_assign.setTitle(self._tr("assign_prop"))
+        self.canvas.set_translator(self._tr)
+        if self.canvas_xz is not None:
+            self.canvas_xz.set_translator(self._tr)
+        self.results_view.set_translator(self._tr)
+
     def _ensure_spatial_views(self):
         wants_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
         if wants_3d and self.canvas_xz is None:
             self.canvas_xz = BeamCanvas(view_plane="XZ")
+            self.canvas_xz.set_translator(self._tr)
             self.canvas_xz.set_mode("readonly")
             self.canvas_xz.set_read_only_display(True)
             self.canvas_xz.setDragMode(self.canvas_xz.DragMode.NoDrag)
             self.canvas_xz.setInteractive(False)
-            self.xz_label = QLabel("XZ View (display only)")
+            self.xz_label = QLabel(self._tr("xz_view"))
             self.xz_label.setStyleSheet("color:#666;")
             self.canvas_layout.addWidget(self.xz_label)
             self.canvas_layout.addWidget(self.canvas_xz, 1)
@@ -934,7 +996,7 @@ class MainWindow(QMainWindow):
             return
         sp = getattr(self, "sp_def_scale", None)
         def_scale = float(sp.value()) if sp is not None else 1.0
-        dlg = ResultsGridDialog(self.project, self.last_results, def_scale=def_scale, parent=self)
+        dlg = ResultsGridDialog(self.project, self.last_results, def_scale=def_scale, parent=self, translator=self._tr)
         dlg.exec()
 
     # ---------------- Canvas callbacks ----------------
@@ -1110,7 +1172,7 @@ class MainWindow(QMainWindow):
             parts.append("Points: " + ", ".join(self.project.points[uid].name for uid in pids))
         if mids:
             parts.append("Members: " + ", ".join(self.project.members[uid].name for uid in mids))
-        self.lbl_sel.setText("Selection: " + ("; ".join(parts) if parts else "(none)"))
+        self.lbl_sel.setText(self._tr("selection.prefix") + ("; ".join(parts) if parts else self._tr("selection.empty")))
 
         # property panel
         if len(pids) == 1 and not mids:
@@ -1576,7 +1638,7 @@ class MainWindow(QMainWindow):
         self.act_bg_visible.setChecked(visible if has_bg else True)
         self.act_bg_visible.blockSignals(False)
         self.act_bg_visible.setEnabled(has_bg)
-        self.act_bg_visible.setText("Hide Background" if visible else "Show Background")
+        self.act_bg_visible.setText(self._tr("action.hide_bg") if visible else self._tr("action.show_bg"))
 
     # ---------------- Background ----------------
     def import_background(self):
@@ -1623,7 +1685,7 @@ class MainWindow(QMainWindow):
     def toggle_background_visible(self, on: bool):
         try:
             self.canvas.set_background_visible(bool(on))
-            self.act_bg_visible.setText("Hide Background" if on else "Show Background")
+            self.act_bg_visible.setText(self._tr("action.hide_bg") if on else self._tr("action.show_bg"))
         except Exception as e:
             QMessageBox.critical(self, "Background", f"Failed to toggle visibility: {e}")
 

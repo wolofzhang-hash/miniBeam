@@ -24,6 +24,12 @@ from ..core.pynite_adapter import SolveOutput
 
 class ResultsView(QWidget):
 
+    def set_translator(self, translator):
+        self._translator = translator
+
+    def _t(self, key: str, **kwargs):
+        return self._translator(key, **kwargs)
+
     @staticmethod
     def _annotate_extrema_and_nodes(ax, x_plot, y_plot, x_nodes_plot=None, text_scale: float = 1.0):
         x_arr = np.asarray(x_plot, dtype=float)
@@ -69,13 +75,14 @@ class ResultsView(QWidget):
                 color="#333333",
             )
 
-    def __init__(self):
+    def __init__(self, translator=None):
         super().__init__()
+        self._translator = translator or (lambda key, **kwargs: key.format(**kwargs) if kwargs else key)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(6)
 
-        self.title = QLabel("Results")
+        self.title = QLabel(self._t("results"))
         lay.addWidget(self.title)
 
         self.fig = Figure(figsize=(7, 4), dpi=100)
@@ -289,7 +296,7 @@ class ResultsView(QWidget):
     def set_data(self, prj: Project, out: SolveOutput, rtype: str, def_scale: float = 50.0):
         self.fig.clear()
         ax = self.fig.add_subplot(111)
-        self.title.setText(f"Results - {rtype} ({out.combo})")
+        self.title.setText(self._t("results.title", rtype=rtype, combo=out.combo))
         self._plot_result_type(ax, prj, out, rtype, def_scale=def_scale, include_title=False)
         self.fig.subplots_adjust(left=0.12, right=0.98, bottom=0.16, top=0.96)
         self.canvas.draw()
@@ -337,12 +344,16 @@ class ResultsGridDialog(QDialog):
     _MAX_GRID_ROWS = max(rows for rows, _ in LAYOUT_MODES.values())
     _MAX_GRID_COLS = max(cols for _, cols in LAYOUT_MODES.values())
 
-    def __init__(self, prj: Project, out: SolveOutput, def_scale: float = 1.0, parent=None):
+    def _t(self, key: str, **kwargs):
+        return self._translator(key, **kwargs)
+
+    def __init__(self, prj: Project, out: SolveOutput, def_scale: float = 1.0, parent=None, translator=None):
         super().__init__(parent)
         self.project = prj
         self.out = out
         self.def_scale = def_scale
-        self.setWindowTitle(f"Results Multi-View ({out.combo})")
+        self._translator = translator or (lambda key, **kwargs: key.format(**kwargs) if kwargs else key)
+        self.setWindowTitle(self._t("results.multiview", combo=out.combo))
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(1400, 900)
 
@@ -353,10 +364,10 @@ class ResultsGridDialog(QDialog):
         self.layout_combo = QComboBox()
         self.layout_combo.addItems(list(self.LAYOUT_MODES.keys()))
         self.layout_combo.setCurrentText("2 x 2")
-        toolbar.addWidget(QLabel("Layout"))
+        toolbar.addWidget(QLabel(self._t("layout")))
         toolbar.addWidget(self.layout_combo)
 
-        self.btn_export_all = QPushButton("Export All Images")
+        self.btn_export_all = QPushButton(self._t("export_all_images"))
         toolbar.addWidget(self.btn_export_all)
         toolbar.addStretch(1)
 
@@ -397,7 +408,7 @@ class ResultsGridDialog(QDialog):
             vbox = QVBoxLayout(panel)
 
             cmb = QComboBox()
-            cmb.addItem("(Empty)")
+            cmb.addItem(self._t("empty"))
             cmb.addItems(self.RESULT_TYPES)
             if idx < len(self.RESULT_TYPES):
                 cmb.setCurrentIndex(idx + 1)
@@ -409,7 +420,7 @@ class ResultsGridDialog(QDialog):
             canvas = FigureCanvas(fig)
             vbox.addWidget(canvas, 1)
 
-            coord_label = QLabel("Click curve point to inspect coordinates")
+            coord_label = QLabel(self._t("click_inspect"))
             vbox.addWidget(coord_label)
 
             slot = PlotSlot(panel, cmb, fig, canvas, coord_label)
@@ -430,7 +441,8 @@ class ResultsGridDialog(QDialog):
         slot.fig.clear()
         ax = slot.fig.add_subplot(111)
         rtype = slot.combo.currentText()
-        if rtype == "(Empty)":
+        if rtype == self._t("empty"):
+
             ax.set_axis_off()
             slot.x_data = np.array([], dtype=float)
             slot.y_data = np.array([], dtype=float)
@@ -448,7 +460,7 @@ class ResultsGridDialog(QDialog):
             )
             slot.x_data = np.asarray(x_data, dtype=float)
             slot.y_data = np.asarray(y_data, dtype=float)
-        slot.coord_label.setText("Click curve point to inspect coordinates")
+        slot.coord_label.setText(self._t("click_inspect"))
         slot.annotation = None
         slot.fig.subplots_adjust(left=0.12, right=0.98, bottom=0.20, top=0.96)
         slot.canvas.draw_idle()
@@ -480,7 +492,7 @@ class ResultsGridDialog(QDialog):
         slot.canvas.draw_idle()
 
     def export_all_images(self):
-        out_dir = QFileDialog.getExistingDirectory(self, "Select export folder")
+        out_dir = QFileDialog.getExistingDirectory(self, self._t("export_folder"))
         if not out_dir:
             return
         import re
@@ -489,7 +501,8 @@ class ResultsGridDialog(QDialog):
         saved = 0
         for idx, slot in enumerate(self.slots, start=1):
             rtype = slot.combo.currentText()
-            if rtype == "(Empty)":
+            if rtype == self._t("empty"):
+
                 continue
             safe = re.sub(r"[^a-zA-Z0-9_\-]+", "_", rtype).strip("_")
             fn = Path(out_dir) / f"result_{idx:02d}_{safe}.png"
@@ -509,6 +522,6 @@ class ResultsGridDialog(QDialog):
             saved += 1
 
         if saved == 0:
-            QMessageBox.information(self, "Export", "No non-empty plots to export.")
+            QMessageBox.information(self, self._t("export"), self._t("no_non_empty_plots"))
         else:
-            QMessageBox.information(self, "Export", f"Exported {saved} image(s) to\n{out_dir}")
+            QMessageBox.information(self, self._t("export"), self._t("exported_images", count=saved, path=out_dir))
