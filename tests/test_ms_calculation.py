@@ -28,6 +28,24 @@ class TestMSCalculation(unittest.TestCase):
         self.assertAlmostEqual(float(result["margin_elastic"][0]), 0.293218, places=4)
         self.assertAlmostEqual(float(result["margin"][0]), 0.519884, places=4)
 
+
+    def test_bending_components_do_not_cancel_each_other(self):
+        result = compute_ms_from_internal_forces(
+            N=np.array([0.0]),
+            Mz=np.array([1_000_000.0]),
+            My=np.array([-1_000_000.0]),
+            T=np.array([0.0]),
+            area=1000.0,
+            Iz=1_000_000.0,
+            Iy=1_000_000.0,
+            J=1_000_000.0,
+            c_z=10.0,
+            c_y=10.0,
+            sigma_allow=100.0,
+        )
+
+        self.assertAlmostEqual(float(result["sigma"][0]), np.sqrt(200.0), places=6)
+
     def test_shape_factor_lower_than_one_is_clamped(self):
         base = compute_ms_from_internal_forces(
             N=np.array([0.0]),
