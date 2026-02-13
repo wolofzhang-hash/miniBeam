@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QRadioButton, QTextBrowser
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
-from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices, QFontMetrics
 from PyQt6.QtWidgets import QStyle, QFileDialog, QHeaderView
 
 import sys
@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
             if os.environ.get("MINIBEAM_DEV") == "1":
                 QMessageBox.critical(self, "Library Load Error", "".join(traceback.format_exception(exc)))
             else:
-                self.statusBar().showMessage("库加载失败：已使用当前项目内置材料/截面。", 6000)
+                self.statusBar().showMessage(self._tr("msg.library_load_failed"), 6000)
 
     # ---------------- UI ----------------
     def _build_ui(self):
@@ -203,6 +203,9 @@ class MainWindow(QMainWindow):
         # Ribbon widget
         from PyQt6.QtWidgets import QTabWidget, QToolButton, QGridLayout, QSizePolicy
 
+        self._ribbon_tab_keys: list[str] = []
+        self._ribbon_buttons: list[QToolButton] = []
+
         self.ribbon = QTabWidget()
         self.ribbon.setDocumentMode(True)
         root.addWidget(self.ribbon, 0)
@@ -212,8 +215,9 @@ class MainWindow(QMainWindow):
         self.cmb_language.addItem(self._tr("language.en"), "en")
         self.cmb_language.setCurrentIndex(0)
 
-        def mk_group(title: str, items: list[object]) -> QWidget:
-            gb = QGroupBox(title)
+        def mk_group(title_key: str, items: list[object]) -> QWidget:
+            gb = QGroupBox(self._tr(title_key))
+            gb.setProperty("i18n_key", title_key)
             lay = QGridLayout(gb)
             lay.setContentsMargins(8, 8, 8, 8)
             lay.setHorizontalSpacing(8)
@@ -227,6 +231,7 @@ class MainWindow(QMainWindow):
                     btn.setIconSize(icon_size)
                     btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
                     lay.addWidget(btn, 0, col)
+                    self._ribbon_buttons.append(btn)
                     col += 1
                 elif isinstance(it, QWidget):
                     lay.addWidget(it, 0, col)
@@ -236,7 +241,7 @@ class MainWindow(QMainWindow):
                     pass
             return gb
 
-        def mk_tab(name: str, groups: list[QWidget]) -> QWidget:
+        def mk_tab(tab_key: str, groups: list[QWidget]) -> QWidget:
             w = QWidget()
             hl = QHBoxLayout(w)
             hl.setContentsMargins(6, 6, 6, 6)
@@ -244,36 +249,37 @@ class MainWindow(QMainWindow):
             for g in groups:
                 hl.addWidget(g)
             hl.addStretch(1)
-            self.ribbon.addTab(w, name)
+            self.ribbon.addTab(w, self._tr(tab_key))
+            self._ribbon_tab_keys.append(tab_key)
             return w
 
-        mk_tab(self._tr("tab.home"), [
-            mk_group(self._tr("group.file"), [self.act_new, self.act_open, self.act_save]),
-            mk_group(self._tr("group.model"), [self.act_select, self.act_add_point, self.act_delete]),
-            mk_group(self._tr("group.language"), [self.cmb_language]),
+        mk_tab("tab.home", [
+            mk_group("group.file", [self.act_new, self.act_open, self.act_save]),
+            mk_group("group.model", [self.act_select, self.act_add_point, self.act_delete]),
+            mk_group("group.language", [self.cmb_language]),
         ])
 
-        mk_tab(self._tr("tab.properties"), [
-            mk_group(self._tr("group.libraries"), [self.act_materials, self.act_sections]),
-            mk_group(self._tr("group.assign"), [self.act_assign_prop]),
+        mk_tab("tab.properties", [
+            mk_group("group.libraries", [self.act_materials, self.act_sections]),
+            mk_group("group.assign", [self.act_assign_prop]),
         ])
 
-        mk_tab(self._tr("tab.constraints_loads"), [
-            mk_group(self._tr("group.constraints"), [self.act_add_dx, self.act_add_bush]),
-            mk_group(self._tr("group.loads"), [self.act_add_fy, self.act_add_udl]),
+        mk_tab("tab.constraints_loads", [
+            mk_group("group.constraints", [self.act_add_dx, self.act_add_bush]),
+            mk_group("group.loads", [self.act_add_fy, self.act_add_udl]),
         ])
 
-        mk_tab(self._tr("tab.background"), [
-            mk_group(self._tr("group.background"), [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
+        mk_tab("tab.background", [
+            mk_group("group.background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
         ])
 
-        mk_tab(self._tr("tab.solve_results"), [
-            mk_group(self._tr("group.solve"), [self.act_validate, self.act_solve]),
-            mk_group(self._tr("group.results"), [self.act_show_results, self.act_export_csv]),
+        mk_tab("tab.solve_results", [
+            mk_group("group.solve", [self.act_validate, self.act_solve]),
+            mk_group("group.results", [self.act_show_results, self.act_export_csv]),
         ])
 
-        mk_tab(self._tr("tab.help"), [
-            mk_group(self._tr("group.support"), [self.act_help_pdf, self.act_about]),
+        mk_tab("tab.help", [
+            mk_group("group.support", [self.act_help_pdf, self.act_about]),
         ])
 
         # main splitter
@@ -333,9 +339,9 @@ class MainWindow(QMainWindow):
         self.lbl_sel.setWordWrap(True)
         pr.addWidget(self.lbl_sel)
 
-        gb = QGroupBox(self._tr("point_props"))
-        pr.addWidget(gb)
-        form = QFormLayout(gb)
+        self.gb_point_props = QGroupBox(self._tr("point_props"))
+        pr.addWidget(self.gb_point_props)
+        form = QFormLayout(self.gb_point_props)
         self.ed_x = QDoubleSpinBox()
         self.ed_x.setRange(-1e9, 1e9)
         self.ed_x.setDecimals(1)
@@ -344,16 +350,24 @@ class MainWindow(QMainWindow):
         # keystroke while typing.
         self.ed_x.setKeyboardTracking(False)
         self.ed_x.setEnabled(False)
-        form.addRow("X (mm)", self.ed_x)
+        self.lbl_x_mm = QLabel(self._tr("point.x"))
+        form.addRow(self.lbl_x_mm, self.ed_x)
 
         self.lbl_len = QLabel("-")
-        form.addRow(self._tr("member_length"), self.lbl_len)
+        self.lbl_member_len = QLabel(self._tr("member_length"))
+        form.addRow(self.lbl_member_len, self.lbl_len)
 
         self.gb_assign = QGroupBox(self._tr("assign_prop"))
         pr.addWidget(self.gb_assign)
         lay_assign = QVBoxLayout(self.gb_assign)
         self.tbl_assign = QTableWidget(0, 5)
-        self.tbl_assign.setHorizontalHeaderLabels(["ID", "Len", "Mat", "Sec", "Clr"])
+        self.tbl_assign.setHorizontalHeaderLabels([
+            self._tr("assign.table.id"),
+            self._tr("assign.table.len"),
+            self._tr("assign.table.mat"),
+            self._tr("assign.table.sec"),
+            self._tr("assign.table.clr"),
+        ])
         self.tbl_assign.verticalHeader().setVisible(False)
         self.tbl_assign.setAlternatingRowColors(True)
         self.tbl_assign.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -372,6 +386,7 @@ class MainWindow(QMainWindow):
 
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([180, 1160, 420])
+        self._sync_ribbon_button_widths()
 
     def _connect(self):
         # --- File ---
@@ -474,16 +489,54 @@ class MainWindow(QMainWindow):
         self.act_about.setText(self._tr("action.copyright"))
         self.act_undo.setText(self._tr("action.undo"))
         self.act_redo.setText(self._tr("action.redo"))
+        self.cmb_language.setItemText(0, self._tr("language.zh"))
+        self.cmb_language.setItemText(1, self._tr("language.en"))
+        for idx, tab_key in enumerate(self._ribbon_tab_keys):
+            self.ribbon.setTabText(idx, self._tr(tab_key))
+        for gb in self.ribbon.findChildren(QGroupBox):
+            key = gb.property("i18n_key")
+            if isinstance(key, str):
+                gb.setTitle(self._tr(key))
         self.tree.setHeaderLabels([self._tr("objects")])
         self.xy_label.setText(self._tr("xy_view"))
         if self.xz_label is not None:
             self.xz_label.setText(self._tr("xz_view"))
         self.lbl_sel.setText(self._tr("selection.none"))
+        self.gb_point_props.setTitle(self._tr("point_props"))
+        self.lbl_x_mm.setText(self._tr("point.x"))
+        self.lbl_member_len.setText(self._tr("member_length"))
         self.gb_assign.setTitle(self._tr("assign_prop"))
+        self.tbl_assign.setHorizontalHeaderLabels([
+            self._tr("assign.table.id"),
+            self._tr("assign.table.len"),
+            self._tr("assign.table.mat"),
+            self._tr("assign.table.sec"),
+            self._tr("assign.table.clr"),
+        ])
         self.canvas.set_translator(self._tr)
         if self.canvas_xz is not None:
             self.canvas_xz.set_translator(self._tr)
         self.results_view.set_translator(self._tr)
+        self._sync_ribbon_button_widths()
+
+    def _sync_ribbon_button_widths(self):
+        if not self._ribbon_buttons:
+            return
+        fm = QFontMetrics(self.font())
+        button_keys = [
+            "action.new", "action.open", "action.save", "action.select", "action.add_point", "action.delete",
+            "action.materials", "action.sections", "action.assign_property", "action.constraint", "action.bush",
+            "action.load", "action.udl", "action.import", "action.calibrate", "action.opacity", "action.bw",
+            "action.show_bg", "action.hide_bg", "action.clear", "action.validate", "action.solve",
+            "action.results", "action.export_csv", "action.help", "action.copyright",
+        ]
+        max_text_w = 0
+        for key in button_keys:
+            for lang in ("zh", "en"):
+                max_text_w = max(max_text_w, fm.horizontalAdvance(tr(lang, key)))
+        fixed_w = max(74, max_text_w + 28)
+        for btn in self._ribbon_buttons:
+            btn.setMinimumWidth(fixed_w)
 
     def _ensure_spatial_views(self):
         wants_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
@@ -523,11 +576,11 @@ class MainWindow(QMainWindow):
 
     def _choose_spatial_mode(self, default_mode: str = "2D") -> str:
         dlg = QDialog(self)
-        dlg.setWindowTitle("选择建模模式")
+        dlg.setWindowTitle(self._tr("dialog.spatial_mode.title"))
         lay = QVBoxLayout(dlg)
-        lay.addWidget(QLabel("请选择项目模式（创建后不可中途切换）："))
-        rb_2d = QRadioButton("2D（仅 XY 视图，平面梁）")
-        rb_3d = QRadioButton("3D（XY，XZ双视图，空间梁）")
+        lay.addWidget(QLabel(self._tr("dialog.spatial_mode.prompt")))
+        rb_2d = QRadioButton(self._tr("dialog.spatial_mode.2d"))
+        rb_3d = QRadioButton(self._tr("dialog.spatial_mode.3d"))
         rb_2d.setChecked(default_mode != "3D")
         rb_3d.setChecked(default_mode == "3D")
         lay.addWidget(rb_2d)
@@ -730,7 +783,7 @@ class MainWindow(QMainWindow):
         if QDesktopServices.openUrl(QUrl.fromLocalFile(str(help_pdf))):
             return
         self._show_help_text_dialog(
-            "无法调用系统 PDF 查看器打开 help.pdf，已切换为内置帮助文本。"
+            self._tr("msg.help_pdf_fallback")
         )
 
     def _show_help_text_dialog(self, prefix_message: str = ""):
@@ -960,7 +1013,7 @@ class MainWindow(QMainWindow):
             self.project.safety_factor = float(sfw.value())
         msgs = validate_project(self.project)
         if not msgs:
-            QMessageBox.information(self, "Validate", "OK：模型检查通过。")
+            QMessageBox.information(self, "Validate", self._tr("msg.validate_ok"))
             return
         text = "\n".join([f"[{m.level}] {m.text}" for m in msgs])
         if any(m.level == "ERROR" for m in msgs):
@@ -984,7 +1037,7 @@ class MainWindow(QMainWindow):
             self.canvas.set_support_reactions(out.reactions)
             if self.canvas_xz is not None:
                 self.canvas_xz.set_support_reactions(out.reactions)
-            QMessageBox.information(self, "Solve", "求解成功。请到 Results 里查看。")
+            QMessageBox.information(self, "Solve", self._tr("msg.solve_ok"))
         except PyniteSolverError as e:
             QMessageBox.critical(self, "PyNite Error", str(e))
         except Exception as e:
@@ -992,7 +1045,7 @@ class MainWindow(QMainWindow):
 
     def show_results(self):
         if self.last_results is None:
-            QMessageBox.information(self, "Results", "还没有结果。请先 Solve。")
+            QMessageBox.information(self, "Results", self._tr("msg.no_results"))
             return
         sp = getattr(self, "sp_def_scale", None)
         def_scale = float(sp.value()) if sp is not None else 1.0
@@ -1003,7 +1056,7 @@ class MainWindow(QMainWindow):
 
     def export_results_csv(self):
         if self.last_results is None:
-            QMessageBox.information(self, "Export CSV", "还没有结果。请先 Solve。")
+            QMessageBox.information(self, "Export CSV", self._tr("msg.no_results"))
             return
         fn, _ = QFileDialog.getSaveFileName(self, "Export Results CSV", "results.csv", "CSV Files (*.csv)")
         if not fn:
@@ -1131,10 +1184,10 @@ class MainWindow(QMainWindow):
                     for row in sorted(diag_rows, key=lambda r: (float(r[3]), 0 if r[0] == "NODE" else 1)):
                         w.writerow(row)
         except Exception as e:
-            QMessageBox.critical(self, "Export CSV", f"导出失败：{e}")
+            QMessageBox.critical(self, "Export CSV", self._tr("msg.export_failed", error=e))
             return
 
-        QMessageBox.information(self, "Export CSV", f"已导出：\n{fn}")
+        QMessageBox.information(self, "Export CSV", self._tr("msg.export_ok", path=fn))
 
     def on_point_added(self, x: float):
         before = self.project.to_dict()
@@ -1169,9 +1222,9 @@ class MainWindow(QMainWindow):
         mids = self.canvas.selected_member_uids()
         parts = []
         if pids:
-            parts.append("Points: " + ", ".join(self.project.points[uid].name for uid in pids))
+            parts.append(self._tr("selection.points") + ", ".join(self.project.points[uid].name for uid in pids))
         if mids:
-            parts.append("Members: " + ", ".join(self.project.members[uid].name for uid in mids))
+            parts.append(self._tr("selection.members") + ", ".join(self.project.members[uid].name for uid in mids))
         self.lbl_sel.setText(self._tr("selection.prefix") + ("; ".join(parts) if parts else self._tr("selection.empty")))
 
         # property panel
@@ -1234,13 +1287,13 @@ class MainWindow(QMainWindow):
         assigned_mat_uids = {m.material_uid for m in self.project.members.values() if m.material_uid in self.project.materials}
         assigned_sec_uids = {m.section_uid for m in self.project.members.values() if m.section_uid in self.project.sections}
 
-        root_pts = QTreeWidgetItem([f"Points ({len(self.project.points)})"])
-        root_mem = QTreeWidgetItem([f"Members ({len(self.project.members)})"])
-        root_mats = QTreeWidgetItem([f"Materials ({len(assigned_mat_uids)})"])
-        root_secs = QTreeWidgetItem([f"Sections ({len(assigned_sec_uids)})"])
-        root_constraints = QTreeWidgetItem(["Constraints"])
-        root_bushes = QTreeWidgetItem(["Bush"])
-        root_loads = QTreeWidgetItem(["Loads"])
+        root_pts = QTreeWidgetItem([f"{self._tr('tree.points')} ({len(self.project.points)})"])
+        root_mem = QTreeWidgetItem([f"{self._tr('tree.members')} ({len(self.project.members)})"])
+        root_mats = QTreeWidgetItem([f"{self._tr('tree.materials')} ({len(assigned_mat_uids)})"])
+        root_secs = QTreeWidgetItem([f"{self._tr('tree.sections')} ({len(assigned_sec_uids)})"])
+        root_constraints = QTreeWidgetItem([self._tr("tree.constraints")])
+        root_bushes = QTreeWidgetItem([self._tr("tree.bush")])
+        root_loads = QTreeWidgetItem([self._tr("tree.loads")])
 
         for root in (root_pts, root_mem, root_mats, root_secs, root_constraints, root_bushes, root_loads):
             self.tree.addTopLevelItem(root)
