@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
         app_icon = self._resource_path("minibeam/assets/app_icon.svg")
         if app_icon.exists():
             self.setWindowIcon(QIcon(str(app_icon)))
-        self.setWindowTitle("MiniBeam v0.2.0 (Phase-1)")
+        self.setWindowTitle("MiniBeam v0.2.0")
         self.resize(1400, 850)
 
         # ---------------- Crash resilience ----------------
@@ -831,7 +831,7 @@ class MainWindow(QMainWindow):
 
     def open_materials(self):
         before = self.project.to_dict()
-        dlg = MaterialManagerDialog(self.project, self)
+        dlg = MaterialManagerDialog(self.project, self, lang=self.current_lang)
         if dlg.exec():
             after = self.project.to_dict()
             self._push_snapshot("Edit Materials", before, after)
@@ -839,7 +839,7 @@ class MainWindow(QMainWindow):
 
     def open_sections(self):
         before = self.project.to_dict()
-        dlg = SectionManagerDialog(self.project, self)
+        dlg = SectionManagerDialog(self.project, self, lang=self.current_lang)
         if dlg.exec():
             after = self.project.to_dict()
             self._push_snapshot("Edit Sections", before, after)

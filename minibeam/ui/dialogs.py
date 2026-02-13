@@ -8,6 +8,7 @@ from PyQt6.QtGui import QPainter, QPen, QBrush, QPolygonF
 
 from ..core.model import Project, Material, Section
 from ..core.section_props import rect_solid, circle_solid, i_section, rect_hollow, circle_hollow
+from .i18n import LANG_ZH
 from ..core.library_store import (
     save_material_library,
     save_section_library,
@@ -152,9 +153,11 @@ class SectionPreview(QLabel):
 
 
 class MaterialManagerDialog(QDialog):
-    def __init__(self, prj: Project, parent=None):
+    def __init__(self, prj: Project, parent=None, lang: str = LANG_ZH):
         super().__init__(parent)
-        self.setWindowTitle("Materials")
+        self._is_zh = lang == LANG_ZH
+        self._txt = lambda zh, en: zh if self._is_zh else en
+        self.setWindowTitle(self._txt("材料", "Materials"))
         self.resize(900, 520)
         self.prj = prj
         self.model_materials = {uid: Material(**vars(mat)) for uid, mat in prj.materials.items()}
@@ -163,7 +166,7 @@ class MaterialManagerDialog(QDialog):
 
         lay = QHBoxLayout(self)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Materials"])
+        self.tree.setHeaderLabels([self._txt("材料", "Materials")])
         lay.addWidget(self.tree, 1)
 
         right = QVBoxLayout()
@@ -185,7 +188,7 @@ class MaterialManagerDialog(QDialog):
         self.ed_nu = NuSpinBox(); self.ed_nu.setRange(0.0, 0.49); self.ed_nu.setDecimals(2)
         self.ed_fy = QDoubleSpinBox(); self.ed_fy.setRange(0, 1e6); self.ed_fy.setDecimals(0)
 
-        form.addRow("Name", self.ed_name)
+        form.addRow(self._txt("名称", "Name"), self.ed_name)
         form.addRow("E (MPa)", self.ed_E)
         form.addRow("G (MPa)", self.ed_G)
         form.addRow("nu", self.ed_nu)
@@ -197,12 +200,12 @@ class MaterialManagerDialog(QDialog):
 
         btns = QHBoxLayout()
         right.addLayout(btns)
-        self.btn_add = QPushButton("Add")
-        self.btn_del = QPushButton("Delete")
-        self.btn_model_to_library = QPushButton("Model -> Library")
-        self.btn_add_from_library = QPushButton("Library -> Model")
-        self.btn_edit_lib = QPushButton("Edit Library")
-        self.btn_save_lib = QPushButton("Save Library")
+        self.btn_add = QPushButton(self._txt("新增", "Add"))
+        self.btn_del = QPushButton(self._txt("删除", "Delete"))
+        self.btn_model_to_library = QPushButton(self._txt("模型 -> 材料库", "Model -> Library"))
+        self.btn_add_from_library = QPushButton(self._txt("材料库 -> 模型", "Library -> Model"))
+        self.btn_edit_lib = QPushButton(self._txt("编辑材料库", "Edit Library"))
+        self.btn_save_lib = QPushButton(self._txt("保存材料库", "Save Library"))
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
@@ -271,7 +274,7 @@ class MaterialManagerDialog(QDialog):
             selected = self._current_selection()
         self.tree.clear()
 
-        root_model = QTreeWidgetItem(["Current Model"])
+        root_model = QTreeWidgetItem([self._txt("当前模型", "Current Model")])
         root_model.setData(0, Qt.ItemDataRole.UserRole, None)
         self.tree.addTopLevelItem(root_model)
         for mat in self.model_materials.values():
@@ -279,7 +282,7 @@ class MaterialManagerDialog(QDialog):
             item.setData(0, Qt.ItemDataRole.UserRole, ("model", mat.uid))
             root_model.addChild(item)
 
-        root_lib = QTreeWidgetItem(["Library"])
+        root_lib = QTreeWidgetItem([self._txt("材料库", "Library")])
         root_lib.setData(0, Qt.ItemDataRole.UserRole, None)
         self.tree.addTopLevelItem(root_lib)
         for mat in self.library_materials.values():
@@ -322,9 +325,9 @@ class MaterialManagerDialog(QDialog):
         self.btn_model_to_library.setEnabled(scope == "model")
         self.btn_add_from_library.setEnabled(scope == "library")
         if scope == "library" and not self._library_edit_enabled:
-            self.lbl_scope_hint.setText("Library 数据默认只读。请使用“Library -> Model”复制到当前模型后再修改。")
+            self.lbl_scope_hint.setText(self._txt("材料库默认只读。请使用“材料库 -> 模型”复制到当前模型后再修改。", "Library is read-only by default. Use 'Library -> Model' before editing."))
         elif scope == "library":
-            self.lbl_scope_hint.setText("⚠ 当前正在直接编辑 Library，可能影响后续所有新模型，请谨慎操作。")
+            self.lbl_scope_hint.setText(self._txt("⚠ 当前正在直接编辑材料库，可能影响后续所有新模型，请谨慎操作。", "⚠ You are editing the library directly; this may affect future models."))
         else:
             self.lbl_scope_hint.setText("正在编辑当前模型中的材料。")
 
@@ -349,7 +352,7 @@ class MaterialManagerDialog(QDialog):
         self.refresh(selected=(scope, uid))
 
     def add_material(self):
-        m = Material(name="Material", E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
+        m = Material(name=self._txt("新材料", "Material"), E=210000.0, G=81000.0, nu=0.3, rho=7.85e-6, sigma_y=355.0)
         self.model_materials[m.uid] = m
         self.refresh(selected=("model", m.uid))
 
@@ -360,7 +363,7 @@ class MaterialManagerDialog(QDialog):
         src = self.library_materials[uid]
         same_uid = self._find_same_material(self.model_materials, src)
         if same_uid:
-            QMessageBox.warning(self, "Materials", "模型中已存在属性相同的材料，无需重复添加。")
+            QMessageBox.warning(self, self._txt("材料", "Materials"), self._txt("模型中已存在属性相同的材料，无需重复添加。", "The same material already exists in the model."))
             self.refresh(selected=("model", same_uid))
             return
         m = Material(name=src.name, E=src.E, G=src.G, nu=src.nu, rho=src.rho, sigma_y=src.sigma_y)
@@ -375,7 +378,7 @@ class MaterialManagerDialog(QDialog):
         src = self.model_materials[uid]
         same_uid = self._find_same_material(self.library_materials, src)
         if same_uid:
-            QMessageBox.warning(self, "Materials", "Library 中已存在属性相同的材料，无需重复添加。")
+            QMessageBox.warning(self, self._txt("材料", "Materials"), self._txt("材料库中已存在属性相同的材料，无需重复添加。", "The same material already exists in the library."))
             self.refresh(selected=("library", same_uid))
             return
 
@@ -404,7 +407,7 @@ class MaterialManagerDialog(QDialog):
             self.model_materials.pop(uid, None)
         elif scope == "library":
             if not self._library_edit_enabled:
-                QMessageBox.warning(self, "Materials", "Library 默认不可删除。请先启用高风险编辑模式。")
+                QMessageBox.warning(self, self._txt("材料", "Materials"), self._txt("材料库默认不可删除。请先启用高风险编辑模式。", "Library deletion is locked. Enable high-risk edit mode first."))
                 return
             self.library_materials.pop(uid, None)
         self.refresh()
@@ -418,8 +421,8 @@ class MaterialManagerDialog(QDialog):
             return
         reply = QMessageBox.warning(
             self,
-            "Risk Warning",
-            "直接修改 Library 会影响所有后续新建模型，存在风险。是否继续启用 Library 编辑？",
+            self._txt("风险提示", "Risk Warning"),
+            self._txt("直接修改材料库会影响所有后续新建模型，存在风险。是否继续启用材料库编辑？", "Directly editing the library impacts future models. Continue?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -429,19 +432,21 @@ class MaterialManagerDialog(QDialog):
 
     def save_library(self):
         if not self._library_edit_enabled:
-            QMessageBox.warning(self, "Materials", "Library 编辑未启用。请先点击“Edit Library”。")
+            QMessageBox.warning(self, self._txt("材料", "Materials"), self._txt("材料库编辑未启用。请先点击“编辑材料库”。", "Library editing is not enabled. Click 'Edit Library' first."))
             return
         try:
             save_material_library(self.library_materials)
-            QMessageBox.information(self, "Materials", "材料库已保存（~/.minibeam/materials.json）。")
+            QMessageBox.information(self, self._txt("材料", "Materials"), self._txt("材料库已保存（~/.minibeam/materials.json）。", "Material library saved (~/.minibeam/materials.json)."))
         except Exception as e:
-            QMessageBox.critical(self, "Materials", f"保存材料库失败：{e}")
+            QMessageBox.critical(self, self._txt("材料", "Materials"), self._txt(f"保存材料库失败：{e}", f"Failed to save material library: {e}"))
 
 
 class SectionManagerDialog(QDialog):
-    def __init__(self, prj: Project, parent=None):
+    def __init__(self, prj: Project, parent=None, lang: str = LANG_ZH):
         super().__init__(parent)
-        self.setWindowTitle("Sections")
+        self._is_zh = lang == LANG_ZH
+        self._txt = lambda zh, en: zh if self._is_zh else en
+        self.setWindowTitle(self._txt("截面", "Sections"))
         self.resize(900, 520)
         self.prj = prj
         self.model_sections = {uid: Section(**vars(sec)) for uid, sec in prj.sections.items()}
@@ -450,14 +455,14 @@ class SectionManagerDialog(QDialog):
 
         lay = QHBoxLayout(self)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Sections"])
+        self.tree.setHeaderLabels([self._txt("截面", "Sections")])
         lay.addWidget(self.tree, 1)
 
         right = QVBoxLayout()
         lay.addLayout(right, 2)
 
         # wizard
-        gb = QGroupBox("Section Wizard (Phase-1)")
+        gb = QGroupBox(self._txt("截面向导", "Section Wizard"))
         right.addWidget(gb)
         self.form = QFormLayout(gb)
 
@@ -471,14 +476,14 @@ class SectionManagerDialog(QDialog):
         self.sp4 = QDoubleSpinBox(); self.sp4.setRange(0.001, 1e9); self.sp4.setDecimals(1)
         self.sp5 = QDoubleSpinBox(); self.sp5.setRange(0.001, 1e9); self.sp5.setDecimals(1)
 
-        self.lbl_p1 = QLabel("Param1")
-        self.lbl_p2 = QLabel("Param2")
-        self.lbl_p3 = QLabel("Param3")
-        self.lbl_p4 = QLabel("Param4")
-        self.lbl_p5 = QLabel("Param5")
+        self.lbl_p1 = QLabel("参数1")
+        self.lbl_p2 = QLabel("参数2")
+        self.lbl_p3 = QLabel("参数3")
+        self.lbl_p4 = QLabel("参数4")
+        self.lbl_p5 = QLabel("参数5")
 
-        self.form.addRow("Type", self.cmb_type)
-        self.form.addRow("Name", self.ed_name)
+        self.form.addRow(self._txt("类型", "Type"), self.cmb_type)
+        self.form.addRow(self._txt("名称", "Name"), self.ed_name)
         self.form.addRow(self.lbl_p1, self.sp1)
         self.form.addRow(self.lbl_p2, self.sp2)
         self.form.addRow(self.lbl_p3, self.sp3)
@@ -498,12 +503,12 @@ class SectionManagerDialog(QDialog):
 
         btns = QHBoxLayout()
         right.addLayout(btns)
-        self.btn_add = QPushButton("Add")
-        self.btn_del = QPushButton("Delete")
-        self.btn_model_to_library = QPushButton("Model -> Library")
-        self.btn_add_from_library = QPushButton("Library -> Model")
-        self.btn_edit_lib = QPushButton("Edit Library")
-        self.btn_save_lib = QPushButton("Save Library")
+        self.btn_add = QPushButton(self._txt("新增/更新", "Add/Update"))
+        self.btn_del = QPushButton(self._txt("删除", "Delete"))
+        self.btn_model_to_library = QPushButton(self._txt("模型 -> 截面库", "Model -> Library"))
+        self.btn_add_from_library = QPushButton(self._txt("截面库 -> 模型", "Library -> Model"))
+        self.btn_edit_lib = QPushButton(self._txt("编辑截面库", "Edit Library"))
+        self.btn_save_lib = QPushButton(self._txt("保存截面库", "Save Library"))
         self.btn_ok = QPushButton("OK")
         self.btn_cancel = QPushButton("Cancel")
         btns.addWidget(self.btn_add)
@@ -598,23 +603,23 @@ class SectionManagerDialog(QDialog):
             sp.setVisible(visible)
 
         if typ == "RectSolid":
-            self.lbl_hint.setText("RectSolid: Param1=b(mm), Param2=h(mm). Param3/4 ignored.")
+            self.lbl_hint.setText(self._txt("实心矩形：参数1=b(mm)，参数2=h(mm)。参数3/4忽略。", "RectSolid: Param1=b(mm), Param2=h(mm). Param3/4 ignored."))
             self.ed_name.setText("Rect100x10")
             self.sp1.setValue(100.0); self.sp2.setValue(10.0)
         elif typ == "RectHollow":
-            self.lbl_hint.setText("RectHollow: Param1=b(mm), Param2=h(mm), Param3=t(mm). Param4 ignored.")
+            self.lbl_hint.setText(self._txt("空心矩形：参数1=b(mm)，参数2=h(mm)，参数3=t(mm)。参数4忽略。", "RectHollow: Param1=b(mm), Param2=h(mm), Param3=t(mm). Param4 ignored."))
             self.ed_name.setText("RectTube100x50x5")
             self.sp1.setValue(100.0); self.sp2.setValue(50.0); self.sp3.setValue(5.0); self.sp4.setValue(0.0)
         elif typ == "CircleSolid":
-            self.lbl_hint.setText("CircleSolid: Param1=d(mm). Others ignored.")
+            self.lbl_hint.setText(self._txt("实心圆：参数1=d(mm)。其余忽略。", "CircleSolid: Param1=d(mm). Others ignored."))
             self.ed_name.setText("Circle20")
             self.sp1.setValue(20.0); self.sp2.setValue(0.0); self.sp3.setValue(0.0); self.sp4.setValue(0.0)
         elif typ == "CircleHollow":
-            self.lbl_hint.setText("CircleHollow: Param1=D(mm), Param2=t(mm). Others ignored.")
+            self.lbl_hint.setText(self._txt("空心圆：参数1=D(mm)，参数2=t(mm)。其余忽略。", "CircleHollow: Param1=D(mm), Param2=t(mm). Others ignored."))
             self.ed_name.setText("Pipe60x4")
             self.sp1.setValue(60.0); self.sp2.setValue(4.0); self.sp3.setValue(0.0); self.sp4.setValue(0.0)
         else:
-            self.lbl_hint.setText("ISection: Param1=h(mm), Param2=bf(mm), Param3=tf(mm), Param4=tw(mm)")
+            self.lbl_hint.setText(self._txt("工字形：参数1=h(mm)，参数2=bf(mm)，参数3=tf(mm)，参数4=tw(mm)。", "ISection: Param1=h(mm), Param2=bf(mm), Param3=tf(mm), Param4=tw(mm)"))
             self.ed_name.setText("I200")
             self.sp1.setValue(200.0); self.sp2.setValue(100.0); self.sp3.setValue(10.0); self.sp4.setValue(6.0)
 
@@ -623,7 +628,7 @@ class SectionManagerDialog(QDialog):
             selected = self._current_selection()
         self.tree.clear()
 
-        root_model = QTreeWidgetItem(["Current Model"])
+        root_model = QTreeWidgetItem([self._txt("当前模型", "Current Model")])
         root_model.setData(0, Qt.ItemDataRole.UserRole, None)
         self.tree.addTopLevelItem(root_model)
         for sec in self.model_sections.values():
@@ -631,7 +636,7 @@ class SectionManagerDialog(QDialog):
             it.setData(0, Qt.ItemDataRole.UserRole, ("model", sec.uid))
             root_model.addChild(it)
 
-        root_lib = QTreeWidgetItem(["Library"])
+        root_lib = QTreeWidgetItem([self._txt("截面库", "Library")])
         root_lib.setData(0, Qt.ItemDataRole.UserRole, None)
         self.tree.addTopLevelItem(root_lib)
         for sec in self.library_sections.values():
@@ -676,9 +681,9 @@ class SectionManagerDialog(QDialog):
         self.btn_model_to_library.setEnabled(scope == "model")
         self.btn_add_from_library.setEnabled(scope == "library")
         if scope == "library" and not self._library_edit_enabled:
-            self.lbl_hint.setText("Library 截面默认只读。请使用“Library -> Model”复制后再编辑。")
+            self.lbl_hint.setText(self._txt("截面库默认只读。请使用“截面库 -> 模型”复制后再编辑。", "Section library is read-only by default. Use 'Library -> Model' before editing."))
         elif scope == "library":
-            self.lbl_hint.setText("⚠ 当前正在直接编辑 Library 截面，可能影响后续所有模型。")
+            self.lbl_hint.setText(self._txt("⚠ 当前正在直接编辑截面库，可能影响后续所有模型。", "⚠ You are editing the section library directly; this may affect future models."))
 
     def add_or_update(self):
         typ = self.cmb_type.currentText()
@@ -744,7 +749,7 @@ class SectionManagerDialog(QDialog):
         src = self.library_sections[uid]
         same_uid = self._find_same_section(self.model_sections, src)
         if same_uid:
-            QMessageBox.warning(self, "Sections", "模型中已存在属性相同的截面，无需重复添加。")
+            QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt("模型中已存在属性相同的截面，无需重复添加。", "The same section already exists in the model."))
             self.refresh(selected=("model", same_uid))
             return
         sec = Section(
@@ -779,7 +784,7 @@ class SectionManagerDialog(QDialog):
         src = self.model_sections[uid]
         same_uid = self._find_same_section(self.library_sections, src)
         if same_uid:
-            QMessageBox.warning(self, "Sections", "Library 中已存在属性相同的截面，无需重复添加。")
+            QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt("截面库中已存在属性相同的截面，无需重复添加。", "The same section already exists in the library."))
             self.refresh(selected=("library", same_uid))
             return
 
@@ -825,8 +830,8 @@ class SectionManagerDialog(QDialog):
             return
         reply = QMessageBox.warning(
             self,
-            "Risk Warning",
-            "直接修改截面 Library 会影响所有后续新建模型，存在风险。是否继续启用编辑？",
+            self._txt("风险提示", "Risk Warning"),
+            self._txt("直接修改截面库会影响所有后续新建模型，存在风险。是否继续启用编辑？", "Directly editing the section library impacts future models. Continue?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -836,13 +841,13 @@ class SectionManagerDialog(QDialog):
 
     def save_library(self):
         if not self._library_edit_enabled:
-            QMessageBox.warning(self, "Sections", "Library 编辑未启用。请先点击“Edit Library”。")
+            QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt("截面库编辑未启用。请先点击“编辑截面库”。", "Library editing is not enabled. Click 'Edit Library' first."))
             return
         try:
             save_section_library(self.library_sections)
-            QMessageBox.information(self, "Sections", "截面库已保存（~/.minibeam/sections.json）。")
+            QMessageBox.information(self, self._txt("截面", "Sections"), self._txt("截面库已保存（~/.minibeam/sections.json）。", "Section library saved (~/.minibeam/sections.json)."))
         except Exception as e:
-            QMessageBox.critical(self, "Sections", f"保存截面库失败：{e}")
+            QMessageBox.critical(self, self._txt("截面", "Sections"), self._txt(f"保存截面库失败：{e}", f"Failed to save section library: {e}"))
 
     def delete_section(self):
         scope, uid = self._current_selection()
@@ -852,7 +857,7 @@ class SectionManagerDialog(QDialog):
             self.model_sections.pop(uid, None)
         elif scope == "library":
             if not self._library_edit_enabled:
-                QMessageBox.warning(self, "Sections", "Library 默认不可删除，请先启用高风险编辑模式。")
+                QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt("截面库默认不可删除，请先启用高风险编辑模式。", "Library deletion is locked. Enable high-risk edit mode first."))
                 return
             self.library_sections.pop(uid, None)
         self.refresh()
