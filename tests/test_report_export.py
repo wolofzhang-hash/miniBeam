@@ -19,9 +19,13 @@ class TestReportExport(unittest.TestCase):
         p2.nodal_loads.append(NodalLoad(direction="FY", value=-500.0, case="LC1"))
 
         mat = Material(name="S355")
+        mat_unused = Material(name="UnusedMat")
         sec = Section(name="Rect")
+        sec_unused = Section(name="UnusedSec")
         prj.materials[mat.uid] = mat
+        prj.materials[mat_unused.uid] = mat_unused
         prj.sections[sec.uid] = sec
+        prj.sections[sec_unused.uid] = sec_unused
         m = Member(name="M1", i_uid=p1.uid, j_uid=p2.uid, material_uid=mat.uid, section_uid=sec.uid)
         prj.members[m.uid] = m
 
@@ -56,6 +60,10 @@ class TestReportExport(unittest.TestCase):
         self.assertIn("荷载 / 边界条件", html)
         self.assertIn("建模截图与 FBD", html)
         self.assertIn("材料与截面信息", html)
+        self.assertIn("Member Assign 列表", html)
+        self.assertIn("M1", html)
+        self.assertIn("S355", html)
+        self.assertIn("Rect", html)
         self.assertIn("生成时间", html)
         self.assertIn("峰值表", html)
         self.assertIn("关键截面验算", html)
@@ -63,6 +71,8 @@ class TestReportExport(unittest.TestCase):
         self.assertIn("-0.2", html)
         self.assertIn("DY=0, RZ=0", html)
         self.assertIn("DX:k=1200", html)
+        self.assertNotIn("UnusedMat", html)
+        self.assertNotIn("UnusedSec", html)
 
 
 if __name__ == "__main__":

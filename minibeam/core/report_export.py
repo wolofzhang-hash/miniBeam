@@ -9,8 +9,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import font_manager
+from matplotlib.patches import Circle, Polygon, Rectangle
 
-from .model import Project
+from .model import Project, Section
 from .pynite_adapter import SolveOutput
 
 
@@ -21,12 +22,12 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
     load_rows = _load_boundary_rows(project)
     material_rows = _material_rows(project)
     section_rows = _section_rows(project)
+    member_assign_rows = _member_assign_rows(project)
     peak_rows = _peak_rows(results)
     critical_rows = _critical_section_rows(results)
 
-    model_img_tag = _build_model_image_tag(project)
-    fbd_img_tag = _build_fbd_image_tag(project, results)
-    mat_sec_img_tag = _build_material_section_image_tag(project)
+    model_fbd_img_tag = _build_model_fbd_image_tag(project, results)
+    sec_img_tag = _build_section_image_tag(project)
     result_img_tag = _build_plot_image_tag(results)
 
     return f"""<!doctype html>
@@ -58,16 +59,15 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
   {_table_html(['类别', '对象', '明细'], load_rows)}
 
   <h2>3. 建模截图与 FBD</h2>
-  <h3>3.1 模型截图</h3>
-  <div class=\"plot\">{model_img_tag}</div>
-  <h3>3.2 FBD（载荷+支反力）</h3>
-  <div class=\"plot\">{fbd_img_tag}</div>
+  <div class=\"plot\">{model_fbd_img_tag}</div>
 
   <h2>4. 材料与截面信息</h2>
   {_table_html(['材料', 'E', 'G', 'nu', 'rho', 'σy'], material_rows)}
   {_table_html(['截面', 'type', 'A', 'Iy', 'Iz', 'J', 'cy', 'cz'], section_rows)}
-  <h3>4.1 材料/截面截图</h3>
-  <div class=\"plot\">{mat_sec_img_tag}</div>
+  <h3>4.1 Member Assign 列表</h3>
+  {_table_html(['杆件', 'i-j', '材料', '截面'], member_assign_rows)}
+  <h3>4.2 截面截图</h3>
+  <div class=\"plot\">{sec_img_tag}</div>
 
   <h2>5. 峰值表</h2>
   {_table_html(['指标', '峰值', '位置 x(mm)'], peak_rows)}
@@ -147,16 +147,45 @@ def _load_boundary_rows(project: Project) -> list[list[str]]:
 
 
 def _material_rows(project: Project) -> list[list[str]]:
+    used_material_uids = {m.material_uid for m in project.members.values() if m.material_uid}
     rows: list[list[str]] = []
     for mat in sorted(project.materials.values(), key=lambda x: x.name):
+        if mat.uid not in used_material_uids:
+            continue
         rows.append([mat.name, f"{mat.E:.6g}", f"{mat.G:.6g}", f"{mat.nu:.6g}", f"{mat.rho:.6g}", f"{mat.sigma_y:.6g}"])
     return rows
 
 
 def _section_rows(project: Project) -> list[list[str]]:
+    used_section_uids = {m.section_uid for m in project.members.values() if m.section_uid}
     rows: list[list[str]] = []
     for sec in sorted(project.sections.values(), key=lambda x: x.name):
+        if sec.uid not in used_section_uids:
+            continue
         rows.append([sec.name, sec.type, f"{sec.A:.6g}", f"{sec.Iy:.6g}", f"{sec.Iz:.6g}", f"{sec.J:.6g}", f"{sec.c_y:.6g}", f"{sec.c_z:.6g}"])
+    return rows
+
+
+def _member_assign_rows(project: Project) -> list[list[str]]:
+    rows: list[list[str]] = []
+    members = sorted(
+        project.members.values(),
+        key=lambda m: (
+            project.points.get(m.i_uid).x if project.points.get(m.i_uid) else 0.0,
+            project.points.get(m.j_uid).x if project.points.get(m.j_uid) else 0.0,
+        ),
+    )
+    for m in members:
+        pi = project.points.get(m.i_uid)
+        pj = project.points.get(m.j_uid)
+        mat = project.materials.get(m.material_uid)
+        sec = project.sections.get(m.section_uid)
+        rows.append([
+            m.name or m.uid,
+            f"{pi.name if pi else m.i_uid} - {pj.name if pj else m.j_uid}",
+            mat.name if mat else "-",
+            sec.name if sec else "-",
+        ])
     return rows
 
 
@@ -238,53 +267,41 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
     return f"<img alt='结果图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
 
 
-def _build_model_image_tag(project: Project) -> str:
+def _draw_model_view(ax, project: Project) -> None:
     points = project.sorted_points()
-    if not points:
-        return "<div class='muted'>无模型数据</div>"
-
-    fig, ax = plt.subplots(figsize=(8.4, 2.6), dpi=140)
     for m in project.members.values():
         pi = project.points.get(m.i_uid)
         pj = project.points.get(m.j_uid)
         if pi is None or pj is None:
             continue
         ax.plot([pi.x, pj.x], [0.0, 0.0], color="#1f2d3d", linewidth=2.5)
-        ax.text((pi.x + pj.x) * 0.5, 0.06, m.name or m.uid, ha="center", va="bottom", fontsize=8)
+        ax.text((pi.x + pj.x) * 0.5, 0.09, m.name or m.uid, ha="center", va="bottom", fontsize=8)
 
     for p in points:
         ax.scatter([p.x], [0.0], color="#2f6fab", s=25, zorder=3)
-        ax.text(p.x, -0.1, p.name or p.uid, ha="center", va="top", fontsize=8)
+        ax.text(p.x, -0.12, p.name or p.uid, ha="center", va="top", fontsize=8)
 
         constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in ("DY", "DZ", "RZ", "RY"))
         if constrained:
-            ax.scatter([p.x], [-0.045], color="#27ae60", marker="v", s=40, zorder=3)
-            ax.text(p.x, -0.16, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
+            ax.scatter([p.x], [-0.055], color="#27ae60", marker="v", s=40, zorder=3)
+            ax.text(p.x, -0.18, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
 
         for ld in p.nodal_loads:
             if ld.direction not in ("FY", "FZ"):
                 continue
             sign = -1 if ld.value < 0 else 1
-            y2 = 0.2 * sign
+            y2 = 0.23 * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.02), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.2))
 
     ax.set_title("Model view (beam line)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
+    ax.set_ylim(-0.35, 0.35)
     ax.grid(True, axis="x", linestyle="--", linewidth=0.5, alpha=0.5)
-    buff = BytesIO()
-    fig.tight_layout()
-    fig.savefig(buff, format="png")
-    plt.close(fig)
-    return f"<img alt='模型图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
 
 
-def _build_fbd_image_tag(project: Project, results: SolveOutput) -> str:
+def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
     points = project.sorted_points()
-    if not points:
-        return "<div class='muted'>无 FBD 数据</div>"
-
-    fig, ax = plt.subplots(figsize=(8.4, 2.6), dpi=140)
     xs = [p.x for p in points]
     ax.plot([min(xs), max(xs)], [0.0, 0.0], color="#444", linewidth=2)
 
@@ -335,41 +352,93 @@ def _build_fbd_image_tag(project: Project, results: SolveOutput) -> str:
     ax.set_title("FBD (red: loads, green: reactions/supports)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
+    ax.set_ylim(-0.35, 0.35)
     ax.grid(True, axis="x", linestyle="--", linewidth=0.5, alpha=0.5)
+
+
+def _build_model_fbd_image_tag(project: Project, results: SolveOutput) -> str:
+    points = project.sorted_points()
+    if not points:
+        return "<div class='muted'>无模型/FBD数据</div>"
+
+    fig, axes = plt.subplots(2, 1, figsize=(8.6, 5.8), dpi=140, constrained_layout=True)
+    _draw_model_view(axes[0], project)
+    _draw_fbd_view(axes[1], project, results)
+
     buff = BytesIO()
-    fig.tight_layout()
     fig.savefig(buff, format="png")
     plt.close(fig)
-    return f"<img alt='FBD图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+    return f"<img alt='模型与FBD图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
 
 
-def _build_material_section_image_tag(project: Project) -> str:
-    mats = sorted(project.materials.values(), key=lambda x: x.name)
-    secs = sorted(project.sections.values(), key=lambda x: x.name)
-    if not mats and not secs:
-        return "<div class='muted'>无材料/截面数据</div>"
+def _build_section_image_tag(project: Project) -> str:
+    used_section_uids = {m.section_uid for m in project.members.values() if m.section_uid}
+    secs = sorted((s for s in project.sections.values() if s.uid in used_section_uids), key=lambda x: x.name)
+    if not secs:
+        return "<div class='muted'>无截面数据</div>"
 
-    fig, ax = plt.subplots(figsize=(8.4, 4.0), dpi=140)
+    n = len(secs)
+    ncols = min(3, n)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(8.6, 2.6 * nrows), dpi=140, constrained_layout=True)
+    axes_arr = np.atleast_1d(axes).ravel()
+    for idx, ax in enumerate(axes_arr):
+        if idx >= n:
+            ax.axis("off")
+            continue
+        _draw_section_shape(ax, secs[idx])
+
+    buff = BytesIO()
+    fig.savefig(buff, format="png")
+    plt.close(fig)
+    return f"<img alt='截面图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+
+
+def _draw_section_shape(ax, sec: Section) -> None:
+    ax.set_aspect("equal")
     ax.axis("off")
-    y = 0.95
-    ax.text(0.02, y, "Material", fontsize=10, fontweight="bold", transform=ax.transAxes)
-    y -= 0.06
-    for m in mats[:8]:
-        ax.text(0.03, y, f"{m.name}: E={m.E:.3g}, G={m.G:.3g}, ν={m.nu:.3g}, σy={m.sigma_y:.3g}", fontsize=8, transform=ax.transAxes)
-        y -= 0.05
+    typ = sec.type
 
-    y -= 0.03
-    ax.text(0.02, y, "Section", fontsize=10, fontweight="bold", transform=ax.transAxes)
-    y -= 0.06
-    for s in secs[:8]:
-        ax.text(0.03, y, f"{s.name}({s.type}): A={s.A:.3g}, Iy={s.Iy:.3g}, Iz={s.Iz:.3g}, J={s.J:.3g}", fontsize=8, transform=ax.transAxes)
-        y -= 0.05
+    if typ == "RectSolid":
+        b = max(float(sec.p1), 1.0)
+        h = max(float(sec.p2), 1.0)
+        ax.add_patch(Rectangle((-b / 2, -h / 2), b, h, fill=False, linewidth=2, color="#1f2d3d"))
+        lim = max(b, h) * 0.65
+    elif typ == "RectHollow":
+        b = max(float(sec.p1), 1.0)
+        h = max(float(sec.p2), 1.0)
+        t = max(float(sec.p3), 0.0)
+        ax.add_patch(Rectangle((-b / 2, -h / 2), b, h, fill=False, linewidth=2, color="#1f2d3d"))
+        if 2 * t < min(b, h):
+            ax.add_patch(Rectangle((-(b - 2 * t) / 2, -(h - 2 * t) / 2), b - 2 * t, h - 2 * t, fill=False, linewidth=1.5, color="#1f2d3d"))
+        lim = max(b, h) * 0.65
+    elif typ == "CircleSolid":
+        d = max(float(sec.p1), 1.0)
+        ax.add_patch(Circle((0, 0), d / 2, fill=False, linewidth=2, color="#1f2d3d"))
+        lim = d * 0.65
+    elif typ == "CircleHollow":
+        d = max(float(sec.p1), 1.0)
+        t = max(float(sec.p2), 0.0)
+        ax.add_patch(Circle((0, 0), d / 2, fill=False, linewidth=2, color="#1f2d3d"))
+        if 2 * t < d:
+            ax.add_patch(Circle((0, 0), d / 2 - t, fill=False, linewidth=1.5, color="#1f2d3d"))
+        lim = d * 0.65
+    else:
+        h = max(float(sec.p1), 1.0)
+        bf = max(float(sec.p2), 1.0)
+        tf = max(float(sec.p3), 1.0)
+        tw = max(float(sec.p4), 1.0)
+        pts = [
+            (-bf / 2, h / 2), (bf / 2, h / 2), (bf / 2, h / 2 - tf), (tw / 2, h / 2 - tf),
+            (tw / 2, -h / 2 + tf), (bf / 2, -h / 2 + tf), (bf / 2, -h / 2), (-bf / 2, -h / 2),
+            (-bf / 2, -h / 2 + tf), (-tw / 2, -h / 2 + tf), (-tw / 2, h / 2 - tf), (-bf / 2, h / 2 - tf),
+        ]
+        ax.add_patch(Polygon(pts, closed=True, fill=False, linewidth=2, color="#1f2d3d"))
+        lim = max(h, bf) * 0.65
 
-    buff = BytesIO()
-    fig.tight_layout()
-    fig.savefig(buff, format="png")
-    plt.close(fig)
-    return f"<img alt='材料截面图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+    ax.set_title(f"{sec.name} ({sec.type})", fontsize=9)
 
 
 def _configure_matplotlib_fonts() -> None:
