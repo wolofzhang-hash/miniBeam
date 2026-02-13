@@ -213,67 +213,6 @@ class Project:
             if ld.direction == direction and ld.case == case:
                 return (True, float(ld.value))
         return (False, 0.0)
-    # ---------------- Serialization ----------------
-    def to_dict(self) -> Dict[str, Any]:
-        """Serialize the entire project to a JSON-friendly dict.
-
-        We use this for simple, robust Undo/Redo (snapshot-based) in Phase-1.
-        The project sizes are small, so full snapshots are acceptable.
-        """
-        return {
-            "units": self.units,
-            "spatial_mode": self.spatial_mode,
-            "auto_members": self.auto_members,
-            "load_cases": list(self.load_cases),
-            "active_load_case": self.active_load_case,
-            "active_combo": self.active_combo,
-            "safety_factor": self.safety_factor,
-            "points": {k: asdict(v) for k, v in self.points.items()},
-            "members": {k: asdict(v) for k, v in self.members.items()},
-            "materials": {k: asdict(v) for k, v in self.materials.items()},
-            "sections": {k: asdict(v) for k, v in self.sections.items()},
-            "combos": {k: asdict(v) for k, v in self.combos.items()},
-        }
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "Project":
-        """Restore a project from :meth:`to_dict`."""
-        prj = Project()
-        prj.units = d.get("units", prj.units)
-        prj.spatial_mode = d.get("spatial_mode", prj.spatial_mode)
-        prj.auto_members = bool(d.get("auto_members", prj.auto_members))
-        prj.load_cases = list(d.get("load_cases", prj.load_cases))
-        prj.active_load_case = d.get("active_load_case", prj.active_load_case)
-        prj.active_combo = d.get("active_combo", prj.active_combo)
-        prj.safety_factor = float(d.get("safety_factor", prj.safety_factor))
-
-        prj.points = {}
-        for uid, pd in d.get("points", {}).items():
-            p = Point(**pd)
-            prj.points[uid] = p
-
-        prj.members = {}
-        for uid, md in d.get("members", {}).items():
-            m = Member(**md)
-            prj.members[uid] = m
-
-        prj.materials = {}
-        for uid, md in d.get("materials", {}).items():
-            mat = Material(**md)
-            prj.materials[uid] = mat
-
-        prj.sections = {}
-        for uid, sd in d.get("sections", {}).items():
-            sec = _upgrade_section(Section(**sd))
-            prj.sections[uid] = sec
-
-        prj.combos = {}
-        for name, cd in d.get("combos", {}).items():
-            prj.combos[name] = LoadCombo(**cd)
-
-        prj.rebuild_names()
-        return prj
-
     # ---------------- Serialization (for undo/redo & save) ----------------
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the entire project to a JSON-safe dict.
@@ -313,7 +252,16 @@ class Project:
             prj.materials[uid] = Material(**md)
         prj.sections = {}
         for uid, sd in d.get("sections", {}).items():
-            prj.sections[uid] = _upgrade_section(Section(**sd))
+            sec = Section(**sd)
+            if "Zp_y" not in sd:
+                sec.Zp_y = float(sd.get("Zp", sec.Zp_y))
+            if "Zp_z" not in sd:
+                sec.Zp_z = float(sd.get("Zp", sec.Zp_z))
+            if "shape_factor_y" not in sd:
+                sec.shape_factor_y = float(sd.get("shape_factor", sec.shape_factor_y))
+            if "shape_factor_z" not in sd:
+                sec.shape_factor_z = float(sd.get("shape_factor", sec.shape_factor_z))
+            prj.sections[uid] = _upgrade_section(sec)
 
         prj.points = {}
         for uid, pd in d.get("points", {}).items():
