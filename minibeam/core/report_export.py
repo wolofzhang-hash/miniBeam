@@ -74,8 +74,8 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
   <h2>5. 峰值表</h2>
   {_table_html(['指标', '峰值', '位置 x(mm)'], peak_rows)}
 
-  <h2>6. 关键截面验算（按 MS 从小到大）</h2>
-  {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(MPa)', 'τt(MPa)', 'MS'], critical_rows)}
+  <h2>6. 关键截面验算（按 MS_elastic 从小到大）</h2>
+  {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(MPa)', 'τt(MPa)', 'MS_elastic', 'MS_plastic'], critical_rows)}
   <h3>6.1 最危险截面详细算例</h3>
   {critical_calc_html}
 
@@ -250,14 +250,14 @@ def _peak_rows(results: SolveOutput) -> list[list[str]]:
 
 def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[str]]:
     x = np.asarray(results.x_diag, dtype=float)
-    ms = np.asarray(results.margin, dtype=float)
-    if x.size == 0 or ms.size == 0:
+    ms_elastic = np.asarray(results.margin_elastic, dtype=float)
+    if x.size == 0 or ms_elastic.size == 0:
         return []
-    valid = np.where(np.isfinite(ms))[0]
+    valid = np.where(np.isfinite(ms_elastic))[0]
     if valid.size == 0:
         return []
     count = min(top_n, valid.size)
-    idxs = valid[np.argsort(ms[valid])[:count]]
+    idxs = valid[np.argsort(ms_elastic[valid])[:count]]
     rows = []
     for k, idx in enumerate(idxs, start=1):
         rows.append([
@@ -269,6 +269,7 @@ def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[st
             _arr_at(results.T, idx, digits=0),
             _arr_at(results.sigma, idx, digits=0),
             _arr_at(results.tau_torsion, idx, digits=0),
+            _arr_at(results.margin_elastic, idx, digits=2),
             _arr_at(results.margin, idx, digits=2),
         ])
     return rows
@@ -524,7 +525,7 @@ def _format_fbd_value(value: float) -> str:
 
 def _critical_section_detail_html(project: Project, results: SolveOutput) -> str:
     x = np.asarray(results.x_diag, dtype=float)
-    ms = np.asarray(results.margin, dtype=float)
+    ms = np.asarray(results.margin_elastic, dtype=float)
     if x.size == 0 or ms.size == 0:
         return "<div class='muted'>无关键截面详细算例数据</div>"
 
@@ -537,37 +538,69 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
     mz_raw = float(np.asarray(results.M, dtype=float)[idx])
     my_raw = float(np.asarray(results.My, dtype=float)[idx])
     t_raw = float(np.asarray(results.T, dtype=float)[idx])
-    sigma_raw = float(np.asarray(results.sigma, dtype=float)[idx])
     tau_t_raw = float(np.asarray(results.tau_torsion, dtype=float)[idx])
 
     n_val = _arr_at(results.N, idx, digits=0)
     mz_val = _arr_at(results.M, idx, digits=0)
     my_val = _arr_at(results.My, idx, digits=0)
     t_val = _arr_at(results.T, idx, digits=0)
-    sigma_val = _arr_at(results.sigma, idx, digits=0)
     tau_t_val = _arr_at(results.tau_torsion, idx, digits=0)
-    ms_val = _arr_at(results.margin, idx, digits=2)
-    sigma_eq = np.sqrt(sigma_raw ** 2 + 3.0 * tau_t_raw ** 2)
+    ms_plastic_val = _arr_at(results.margin, idx, digits=2)
+    ms_elastic_val = _arr_at(results.margin_elastic, idx, digits=2)
     mat = _first_used_material(project)
     sigma_allow = float(mat.sigma_y) if mat is not None else 0.0
+    area = max(float(sec.A), 1e-12)
+    k_z = max(float(getattr(sec, "shape_factor_z", getattr(sec, "shape_factor", 1.0)) or 1.0), 1.0)
+    k_y = max(float(getattr(sec, "shape_factor_y", k_z) or k_z), 1.0)
+    k_t = max(float(getattr(sec, "shape_factor_t", 1.0) or 1.0), 1.0)
 
     sigma_z_raw = mz_raw * float(sec.c_z) / max(float(sec.Iz), 1e-12)
     sigma_y_raw = my_raw * float(sec.c_y) / max(float(sec.Iy), 1e-12)
+    sigma_axial_raw = n_raw / area
+    is_circular = str(getattr(sec, "type", "")).startswith("Circle")
+    if is_circular:
+        sigma_elastic_raw = sigma_axial_raw + np.sqrt(sigma_z_raw ** 2 + sigma_y_raw ** 2)
+        sigma_plastic_raw = sigma_axial_raw + np.sqrt((sigma_z_raw / k_z) ** 2 + (sigma_y_raw / k_y) ** 2)
+    else:
+        sigma_elastic_raw = max(
+            abs(sigma_axial_raw + sigma_z_raw + sigma_y_raw),
+            abs(sigma_axial_raw + sigma_z_raw - sigma_y_raw),
+            abs(sigma_axial_raw - sigma_z_raw + sigma_y_raw),
+            abs(sigma_axial_raw - sigma_z_raw - sigma_y_raw),
+        )
+        sigma_plastic_raw = max(
+            abs(sigma_axial_raw + sigma_z_raw / k_z + sigma_y_raw / k_y),
+            abs(sigma_axial_raw + sigma_z_raw / k_z - sigma_y_raw / k_y),
+            abs(sigma_axial_raw - sigma_z_raw / k_z + sigma_y_raw / k_y),
+            abs(sigma_axial_raw - sigma_z_raw / k_z - sigma_y_raw / k_y),
+        )
+    r_max = max(float(sec.c_y), float(sec.c_z), 1e-9)
+    tau_t_elastic_raw = t_raw * r_max / max(float(sec.J), 1e-12)
+    sigma_eq_elastic_raw = np.sqrt(sigma_elastic_raw ** 2 + 3.0 * tau_t_elastic_raw ** 2)
+    sigma_eq_plastic_raw = np.sqrt(sigma_plastic_raw ** 2 + 3.0 * tau_t_raw ** 2)
 
     sigma_z_val = str(int(np.rint(sigma_z_raw)))
     sigma_y_val = str(int(np.rint(sigma_y_raw)))
-    sigma_eq_val = str(int(np.rint(sigma_eq)))
+    sigma_elastic_val = str(int(np.rint(sigma_elastic_raw)))
+    sigma_plastic_val = str(int(np.rint(sigma_plastic_raw)))
+    tau_t_elastic_val = str(int(np.rint(tau_t_elastic_raw)))
+    sigma_eq_elastic_val = str(int(np.rint(sigma_eq_elastic_raw)))
+    sigma_eq_plastic_val = str(int(np.rint(sigma_eq_plastic_raw)))
 
     rows = [
         ["最危险位置", f"x={float(x[idx]):.3f} mm"],
         ["采用截面", f"{sec.name} ({sec.type})"],
         ["内力输入", f"N={n_val}, Mz={mz_val}, My={my_val}, T={t_val}"],
         ["截面参数", f"A={sec.A:.6g}, Iz={sec.Iz:.6g}, Iy={sec.Iy:.6g}, J={sec.J:.6g}, cz={sec.c_z:.6g}, cy={sec.c_y:.6g}"],
-        ["应力结果", f"σz={sigma_z_val}, σy={sigma_y_val}, σ={sigma_val}, τt={tau_t_val}"],
-        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq_val} MPa"],
+        ["应力结果(弹性)", f"σz={sigma_z_val}, σy={sigma_y_val}, σ={sigma_elastic_val}, τt={tau_t_elastic_val}"],
+        ["应力结果(塑性修正)", f"σ_plastic={sigma_plastic_val}, τt_plastic={tau_t_val}"],
+        ["等效应力(弹性)", f"σeq_elastic = sqrt(σ² + 3τ²) = {sigma_eq_elastic_val} MPa"],
+        ["等效应力(塑性)", f"σeq_plastic = sqrt(σ_plastic² + 3τ_plastic²) = {sigma_eq_plastic_val} MPa"],
         ["许用应力", f"σallow = fy = {sigma_allow:.6g} MPa"],
-        ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
-        ["σz说明", "σz = Mz·cz/Iz；σy = My·cy/Iy（按最外纤维线弹性弯曲应力直接计算）"],
+        ["安全裕度(弹性)", f"MS_elastic = σallow/|σeq_elastic|-1 = {ms_elastic_val}"],
+        ["安全裕度(塑性)", f"MS_plastic = σallow/|σeq_plastic|-1 = {ms_plastic_val}"],
+        ["σ说明", "圆形截面按矢量合成；非圆形截面按四个角点应力代数叠加并取最大绝对值"],
+        ["形状系数", f"kz={k_z:.3f}, ky={k_y:.3f}, kt={k_t:.3f}"],
     ]
     return _table_html(["步骤", "计算说明"], rows)
 
