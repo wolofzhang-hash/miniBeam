@@ -1218,6 +1218,11 @@ class MainWindow(QMainWindow):
                 printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                 printer.setOutputFileName(fn)
                 printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+                # Keep QTextDocument layout width aligned with PDF printable width,
+                # otherwise Qt may lay out against an unconstrained page and then
+                # uniformly shrink on print, causing visual scale mismatch.
+                doc.setDocumentMargin(0)
+                doc.setPageSize(printer.pageRect(QPrinter.Unit.Point).size())
                 doc.print(printer)
             else:
                 Path(fn).write_text(html, encoding="utf-8")
