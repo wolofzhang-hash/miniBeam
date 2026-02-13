@@ -334,6 +334,8 @@ class ResultsGridDialog(QDialog):
         "4 x 2": (4, 2),
         "4 x 3": (4, 3),
     }
+    _MAX_GRID_ROWS = max(rows for rows, _ in LAYOUT_MODES.values())
+    _MAX_GRID_COLS = max(cols for _, cols in LAYOUT_MODES.values())
 
     def __init__(self, prj: Project, out: SolveOutput, def_scale: float = 1.0, parent=None):
         super().__init__(parent)
@@ -382,6 +384,13 @@ class ResultsGridDialog(QDialog):
         self._clear_grid()
         rows, cols = self.LAYOUT_MODES[self.layout_combo.currentText()]
         total = rows * cols
+
+        # Reset all stretches first so old layout settings don't continue
+        # stealing space after switching back to a smaller grid.
+        for row in range(self._MAX_GRID_ROWS):
+            self.grid_layout.setRowStretch(row, 0)
+        for col in range(self._MAX_GRID_COLS):
+            self.grid_layout.setColumnStretch(col, 0)
 
         for idx in range(total):
             panel = QWidget()
