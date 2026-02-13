@@ -57,6 +57,7 @@ def compute_ms_from_internal_forces(
     shape_factor_z: float = 1.0,
     shape_factor_y: float = 1.0,
     shape_factor_t: float = 1.0,
+    is_circular_section: bool = False,
 ) -> Dict[str, np.ndarray]:
     """Compute stress and margin arrays used by MiniBeam MS post-processing."""
     N = np.asarray(N, dtype=float)
@@ -72,11 +73,22 @@ def compute_ms_from_internal_forces(
     sigma_bending_z = Mz * c_z / max(Iz, 1e-12)
     sigma_bending_y = My * c_y / max(Iy, 1e-12)
 
-    sigma_bending_elastic = np.sqrt(sigma_bending_z**2 + sigma_bending_y**2)
-    sigma_bending = np.sqrt((sigma_bending_z / k_z)**2 + (sigma_bending_y / k_y)**2)
-
-    sigma_elastic = sigma_axial + sigma_bending_elastic
-    sigma = sigma_axial + sigma_bending
+    if is_circular_section:
+        sigma_elastic = sigma_axial + np.sqrt(sigma_bending_z**2 + sigma_bending_y**2)
+        sigma = sigma_axial + np.sqrt((sigma_bending_z / k_z)**2 + (sigma_bending_y / k_y)**2)
+    else:
+        sigma_elastic = np.maximum.reduce([
+            np.abs(sigma_axial + sigma_bending_z + sigma_bending_y),
+            np.abs(sigma_axial + sigma_bending_z - sigma_bending_y),
+            np.abs(sigma_axial - sigma_bending_z + sigma_bending_y),
+            np.abs(sigma_axial - sigma_bending_z - sigma_bending_y),
+        ])
+        sigma = np.maximum.reduce([
+            np.abs(sigma_axial + sigma_bending_z / k_z + sigma_bending_y / k_y),
+            np.abs(sigma_axial + sigma_bending_z / k_z - sigma_bending_y / k_y),
+            np.abs(sigma_axial - sigma_bending_z / k_z + sigma_bending_y / k_y),
+            np.abs(sigma_axial - sigma_bending_z / k_z - sigma_bending_y / k_y),
+        ])
 
     r_max = max(c_y, c_z, 1e-9)
     tau_t_elastic = T * r_max / max(J, 1e-12)
@@ -89,6 +101,7 @@ def compute_ms_from_internal_forces(
 
     return {
         "sigma": sigma,
+        "sigma_elastic": sigma_elastic,
         "tau_t": tau_t,
         "margin": margin,
         "margin_elastic": margin_elastic,
@@ -472,8 +485,9 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
             shape_factor_z=k_z,
             shape_factor_y=k_y,
             shape_factor_t=k_t,
+            is_circular_section=str(getattr(sec, "type", "")).startswith("Circle"),
         )
-        sigma = ms_result["sigma"]
+        sigma = ms_result["sigma_elastic"]
         tau_t = ms_result["tau_t"]
         margin = ms_result["margin"]
         margin_elastic = ms_result["margin_elastic"]
