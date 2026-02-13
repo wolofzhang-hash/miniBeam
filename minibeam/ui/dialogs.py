@@ -200,7 +200,7 @@ class MaterialManagerDialog(QDialog):
 
         btns = QHBoxLayout()
         right.addLayout(btns)
-        self.btn_add = QPushButton(self._txt("新增", "Add"))
+        self.btn_add = QPushButton(self._txt("新增/更新", "Add/Update"))
         self.btn_del = QPushButton(self._txt("删除", "Delete"))
         self.btn_model_to_library = QPushButton(self._txt("模型 -> 材料库", "Model -> Library"))
         self.btn_add_from_library = QPushButton(self._txt("材料库 -> 模型", "Library -> Model"))

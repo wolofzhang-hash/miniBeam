@@ -29,8 +29,6 @@ from .results_view import ResultsView, ResultsGridDialog
 from .i18n import LANG_ZH, tr
 from ..core.undo import UndoStack
 from ..core.library_store import (
-    load_builtin_material_library,
-    load_material_library,
     load_section_library,
     merge_by_name,
 )
@@ -116,10 +114,9 @@ class MainWindow(QMainWindow):
         self.last_results: SolveOutput | None = None
 
     def _merge_libraries_into_project(self):
-        # Keep material/section library data available across open/save cycles.
+        # Keep section library data available across open/save cycles.
+        # Materials are edited in-model and should not be auto-injected from library.
         try:
-            merge_by_name(self.project.materials, load_builtin_material_library(), name_attr="name")
-            merge_by_name(self.project.materials, load_material_library(), name_attr="name")
             merge_by_name(self.project.sections, load_section_library(), name_attr="name")
         except Exception as exc:
             logging.exception("Failed to merge material/section libraries into project")
@@ -1370,10 +1367,22 @@ class MainWindow(QMainWindow):
 
     # ---------------- File: New/Open/Save (JSON model) ----------------
     def new_project(self):
-        # Keep libraries (materials/sections) already loaded; clear model topology.
+        # Keep only one default material/section for a fresh model.
         chosen_mode = self._choose_spatial_mode(default_mode=self.project.spatial_mode)
         self.project.spatial_mode = chosen_mode
         self._ensure_spatial_views()
+
+        default_mat = next(iter(self.project.materials.values()), None)
+        if default_mat is None:
+            default_mat = Material(name="steel", E=206000.0, G=79300.0, nu=0.3, rho=7.85e-6, sigma_y=235.0)
+        self.project.materials = {default_mat.uid: Material(**vars(default_mat))}
+
+        default_sec = next(iter(self.project.sections.values()), None)
+        if default_sec is None:
+            sp = rect_solid(100.0, 10.0)
+            default_sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_y=sp.c_y, c_z=sp.c_z, Zp_y=sp.Zp_y, Zp_z=sp.Zp_z, shape_factor_y=sp.shape_factor_y, shape_factor_z=sp.shape_factor_z, shape_factor_t=sp.shape_factor_t, Zp=sp.Zp_z, shape_factor=sp.shape_factor_z, p1=100.0, p2=10.0)
+        self.project.sections = {default_sec.uid: Section(**vars(default_sec))}
+
         self.project.points.clear()
         self.project.members.clear()
         self.project.rebuild_names()
