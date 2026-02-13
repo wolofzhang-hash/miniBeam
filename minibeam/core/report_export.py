@@ -245,7 +245,6 @@ def _peak_rows(results: SolveOutput) -> list[list[str]]:
         peak("弯矩 M", results.M),
         peak("扭矩 T", results.T),
         peak("应力 σ", results.sigma),
-        peak("裕度 MS", results.margin),
     ]
 
 
@@ -254,8 +253,11 @@ def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[st
     ms = np.asarray(results.margin, dtype=float)
     if x.size == 0 or ms.size == 0:
         return []
-    count = min(top_n, x.size, ms.size)
-    idxs = np.argsort(ms)[:count]
+    valid = np.where(np.isfinite(ms))[0]
+    if valid.size == 0:
+        return []
+    count = min(top_n, valid.size)
+    idxs = valid[np.argsort(ms[valid])[:count]]
     rows = []
     for k, idx in enumerate(idxs, start=1):
         rows.append([
@@ -267,7 +269,7 @@ def _critical_section_rows(results: SolveOutput, top_n: int = 8) -> list[list[st
             _arr_at(results.T, idx, digits=0),
             _arr_at(results.sigma, idx, digits=0),
             _arr_at(results.tau_torsion, idx, digits=0),
-            _arr_at(results.margin, idx),
+            _arr_at(results.margin, idx, digits=2),
         ])
     return rows
 
@@ -544,23 +546,13 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
     t_val = _arr_at(results.T, idx, digits=0)
     sigma_val = _arr_at(results.sigma, idx, digits=0)
     tau_t_val = _arr_at(results.tau_torsion, idx, digits=0)
-    ms_val = _arr_at(results.margin, idx)
+    ms_val = _arr_at(results.margin, idx, digits=2)
     sigma_eq = np.sqrt(sigma_raw ** 2 + 3.0 * tau_t_raw ** 2)
     mat = _first_used_material(project)
     sigma_allow = float(mat.sigma_y) if mat is not None else 0.0
 
-    sigma_axial = n_raw / max(float(sec.A), 1e-12)
-    sigma_bending = sigma_raw - sigma_axial
-    sigma_bending_z_raw = mz_raw * float(sec.c_z) / max(float(sec.Iz), 1e-12)
-    sigma_bending_y_raw = my_raw * float(sec.c_y) / max(float(sec.Iy), 1e-12)
-    sigma_bending_norm = np.hypot(sigma_bending_z_raw, sigma_bending_y_raw)
-    if sigma_bending_norm > 1e-12:
-        scale = sigma_bending / sigma_bending_norm
-        sigma_z_raw = sigma_bending_z_raw * scale
-        sigma_y_raw = sigma_bending_y_raw * scale
-    else:
-        sigma_z_raw = 0.0
-        sigma_y_raw = 0.0
+    sigma_z_raw = mz_raw * float(sec.c_z) / max(float(sec.Iz), 1e-12)
+    sigma_y_raw = my_raw * float(sec.c_y) / max(float(sec.Iy), 1e-12)
 
     sigma_z_val = str(int(np.rint(sigma_z_raw)))
     sigma_y_val = str(int(np.rint(sigma_y_raw)))
@@ -575,6 +567,7 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
         ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq_val} MPa"],
         ["许用应力", f"σallow = fy = {sigma_allow:.6g} MPa"],
         ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
+        ["σz说明", "σz = Mz·cz/Iz；σy = My·cy/Iy（按最外纤维线弹性弯曲应力直接计算）"],
     ]
     return _table_html(["步骤", "计算说明"], rows)
 
@@ -642,7 +635,7 @@ def _member_strength_table_html(project: Project, results: SolveOutput) -> str:
             "T": _arr_at(results.T, idx, digits=0) if idx >= 0 else "-",
             "sigma": _arr_at(sigma, idx, digits=0) if 0 <= idx < sigma.size else "-",
             "tau_t": _arr_at(tau_t, idx, digits=0) if 0 <= idx < tau_t.size else "-",
-            "margin": f"{float(margin[idx]):.6g}" if 0 <= idx < margin.size else "-",
+            "margin": f"{float(margin[idx]):.2f}" if 0 <= idx < margin.size else "-",
         })
 
     rows: list[list[str]] = []
