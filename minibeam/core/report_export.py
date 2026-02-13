@@ -26,6 +26,7 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
     peak_rows = _peak_rows(results)
     critical_rows = _critical_section_rows(results)
     critical_calc_html = _critical_section_detail_html(project, results)
+    member_strength_html = _member_strength_table_html(project, results)
 
     model_fbd_img_tag = _build_model_fbd_image_tag(project, results)
     sec_img_tag = _build_section_image_tag(project)
@@ -78,7 +79,10 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
   <h3>6.1 最危险截面详细算例</h3>
   {critical_calc_html}
 
-  <h2>7. 结果图形</h2>
+  <h2>7. 各杆件强度计算表</h2>
+  {member_strength_html}
+
+  <h2>8. 结果图形</h2>
   <div class=\"plot\">{result_img_tag}</div>
 </body>
 </html>
@@ -544,6 +548,78 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
         ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
     ]
     return _table_html(["步骤", "计算说明"], rows)
+
+
+def _member_strength_table_html(project: Project, results: SolveOutput) -> str:
+    members = sorted(
+        project.members.values(),
+        key=lambda m: (
+            project.points.get(m.i_uid).x if project.points.get(m.i_uid) else 0.0,
+            project.points.get(m.j_uid).x if project.points.get(m.j_uid) else 0.0,
+            m.name or m.uid,
+        ),
+    )
+    if not members:
+        return _table_html(["项目"], [])
+
+    headers = ["项目", *[m.name or m.uid for m in members]]
+    x = np.asarray(results.x_diag, dtype=float)
+    margin = np.asarray(results.margin, dtype=float)
+    sigma = np.asarray(results.sigma, dtype=float)
+    tau_t = np.asarray(results.tau_torsion, dtype=float)
+
+    labels_and_keys = [
+        ("截面属性 / x起点 (mm)", "x_start"),
+        ("截面属性 / x终点 (mm)", "x_end"),
+        ("截面属性 / 材料", "material"),
+        ("截面属性 / 截面", "section"),
+        ("许用值 / [σ] (MPa)", "sigma_allow"),
+        ("载荷 / N (N)", "N"),
+        ("载荷 / Vy (N)", "V"),
+        ("载荷 / Mz (N·mm)", "M"),
+        ("载荷 / My (N·mm)", "My"),
+        ("载荷 / T (N·mm)", "T"),
+        ("应力 / σ (MPa)", "sigma"),
+        ("应力 / τt (MPa)", "tau_t"),
+        ("安全裕度 / MS", "margin"),
+    ]
+
+    values_by_member: list[dict[str, str]] = []
+    for m in members:
+        pi = project.points.get(m.i_uid)
+        pj = project.points.get(m.j_uid)
+        mat = project.materials.get(m.material_uid)
+        sec = project.sections.get(m.section_uid)
+        x_i = float(pi.x) if pi is not None else 0.0
+        x_j = float(pj.x) if pj is not None else x_i
+        lo, hi = min(x_i, x_j), max(x_i, x_j)
+
+        idx = -1
+        if x.size and margin.size == x.size:
+            local_idxs = np.where((x >= lo - 1e-9) & (x <= hi + 1e-9))[0]
+            if local_idxs.size > 0:
+                idx = int(local_idxs[np.argmin(margin[local_idxs])])
+
+        values_by_member.append({
+            "x_start": f"{x_i:.3f}",
+            "x_end": f"{x_j:.3f}",
+            "material": mat.name if mat else "-",
+            "section": sec.name if sec else "-",
+            "sigma_allow": f"{float(mat.sigma_y):.6g}" if mat else "-",
+            "N": _arr_at(results.N, idx) if idx >= 0 else "-",
+            "V": _arr_at(results.V, idx) if idx >= 0 else "-",
+            "M": _arr_at(results.M, idx) if idx >= 0 else "-",
+            "My": _arr_at(results.My, idx) if idx >= 0 else "-",
+            "T": _arr_at(results.T, idx) if idx >= 0 else "-",
+            "sigma": f"{float(sigma[idx]):.6g}" if 0 <= idx < sigma.size else "-",
+            "tau_t": f"{float(tau_t[idx]):.6g}" if 0 <= idx < tau_t.size else "-",
+            "margin": f"{float(margin[idx]):.6g}" if 0 <= idx < margin.size else "-",
+        })
+
+    rows: list[list[str]] = []
+    for label, key in labels_and_keys:
+        rows.append([label, *[vals[key] for vals in values_by_member]])
+    return _table_html(headers, rows)
 
 
 def _first_used_section(project: Project) -> Section | None:
