@@ -69,6 +69,20 @@ class TestProjectSerialization(unittest.TestCase):
         self.assertAlmostEqual(sec.shape_factor_y, 1.15)
         self.assertAlmostEqual(sec.shape_factor_z, 1.15)
 
+
+    def test_safety_factor_is_forced_to_one(self):
+        legacy = {
+            "points": {},
+            "members": {},
+            "materials": {},
+            "sections": {},
+            "safety_factor": 2.5,
+        }
+
+        prj = Project.from_dict(legacy)
+
+        self.assertAlmostEqual(prj.safety_factor, 1.0)
+
     def test_legacy_section_dimensions_are_recovered_for_rect(self):
         legacy = {
             "points": {},

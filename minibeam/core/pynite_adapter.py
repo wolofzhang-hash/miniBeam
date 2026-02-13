@@ -453,7 +453,7 @@ def solve_with_pynite(prj: Project, combo_name: str, n_samples_per_member: int =
 
         sec = prj.sections[m.section_uid]
         mat = prj.materials[m.material_uid]
-        sigma_allow = mat.sigma_y / max(prj.safety_factor, 1e-6)
+        sigma_allow = mat.sigma_y
         c_y = float(getattr(sec, "c_y", getattr(sec, "c_z", 0.0)) or 0.0)
         c_z = float(getattr(sec, "c_z", c_y) or c_y)
 

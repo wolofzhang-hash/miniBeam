@@ -27,8 +27,8 @@ def rect_solid(b: float, h: float) -> SectionProps:
     c = min(b, h)
     beta = c/a
     J = a*c**3*(1/3 - 0.21*beta*(1 - beta**4/12))
-    c_y = h/2.0
-    c_z = h/2.0  # legacy stress path uses h/2 with Iz
+    c_y = b/2.0
+    c_z = h/2.0
     Ze_y = Iy / max(c_y, 1e-12)
     Ze_z = Iz / max(c_z, 1e-12)
     Zp_y_raw = b*h*h/4.0
@@ -121,7 +121,7 @@ def rect_hollow(b: float, h: float, t: float) -> SectionProps:
     Am = bm*hm
     J = 4*(Am**2) / (2*(bm/t) + 2*(hm/t))
 
-    c_y = h/2.0
+    c_y = b/2.0
     c_z = h/2.0
     Ze_y = Iy / max(c_y, 1e-12)
     Ze_z = Iz / max(c_z, 1e-12)

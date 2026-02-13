@@ -171,7 +171,7 @@ class Project:
     active_load_case: str = "LC1"
     combos: Dict[str, LoadCombo] = field(default_factory=lambda: {"COMB1": LoadCombo()})
     active_combo: str = "COMB1"
-    safety_factor: float = 1.5
+    safety_factor: float = 1.0
 
     def sorted_points(self) -> List[Point]:
         return sorted(self.points.values(), key=lambda p: (p.x, p.name))
@@ -279,7 +279,7 @@ class Project:
         prj.load_cases = list(d.get("load_cases", prj.load_cases))
         prj.active_load_case = d.get("active_load_case", prj.active_load_case)
         prj.active_combo = d.get("active_combo", prj.active_combo)
-        prj.safety_factor = float(d.get("safety_factor", prj.safety_factor))
+        prj.safety_factor = 1.0
 
         # Restore materials/sections first
         prj.materials = {}

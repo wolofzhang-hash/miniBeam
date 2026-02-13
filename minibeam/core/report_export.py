@@ -74,7 +74,7 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
   {_table_html(['指标', '峰值', '位置 x(mm)'], peak_rows)}
 
   <h2>6. 关键截面验算（按 MS 从小到大）</h2>
-  {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(N/mm²)', 'τt(N/mm²)', 'MS'], critical_rows)}
+  {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(MPa)', 'τt(MPa)', 'MS'], critical_rows)}
   <h3>6.1 最危险截面详细算例</h3>
   {critical_calc_html}
 
@@ -112,7 +112,7 @@ def _project_summary_rows(project: Project, results: SolveOutput) -> list[list[s
         ["杆件数", str(len(project.members))],
         ["跨长(mm)", f"{span:.3f}"],
         ["空间模式", project.spatial_mode],
-        ["安全系数", f"{float(getattr(project, 'safety_factor', 1.5)):.3f}"],
+        ["安全系数", "1.000"],
         ["工况组合", results.combo],
     ]
 
@@ -291,8 +291,8 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
         ("dz (mm)", np.asarray(results.dz_diag, dtype=float)),
         ("rz (rad)", np.asarray(results.rz_diag, dtype=float)),
         ("ry (rad)", np.asarray(results.ry_diag, dtype=float)),
-        ("σ (N/mm²)", np.asarray(results.sigma, dtype=float)),
-        ("τt (N/mm²)", np.asarray(results.tau_torsion, dtype=float)),
+        ("σ (MPa)", np.asarray(results.sigma, dtype=float)),
+        ("τt (MPa)", np.asarray(results.tau_torsion, dtype=float)),
         ("MS (-)", np.asarray(results.margin, dtype=float)),
         ("MS elastic (-)", np.asarray(results.margin_elastic, dtype=float)),
         ("MS plastic (-)", np.asarray(results.margin_plastic, dtype=float)),
@@ -455,7 +455,7 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
     ms_val = _arr_at(results.margin, idx)
     sigma_eq = np.sqrt(float(np.asarray(results.sigma, dtype=float)[idx]) ** 2 + 3.0 * float(np.asarray(results.tau_torsion, dtype=float)[idx]) ** 2)
     mat = _first_used_material(project)
-    sigma_allow = (float(mat.sigma_y) / max(float(getattr(project, "safety_factor", 1.5)), 1e-9)) if mat is not None else 0.0
+    sigma_allow = float(mat.sigma_y) if mat is not None else 0.0
 
     rows = [
         ["最危险位置", f"x={float(x[idx]):.3f} mm"],
@@ -463,8 +463,8 @@ def _critical_section_detail_html(project: Project, results: SolveOutput) -> str
         ["内力输入", f"N={n_val}, Mz={mz_val}, My={my_val}, T={t_val}"],
         ["截面参数", f"A={sec.A:.6g}, Iz={sec.Iz:.6g}, Iy={sec.Iy:.6g}, J={sec.J:.6g}, cz={sec.c_z:.6g}, cy={sec.c_y:.6g}"],
         ["应力结果", f"σ={sigma_val}, τt={tau_t_val}"],
-        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq:.6g} N/mm²"],
-        ["许用应力", f"σallow = fy/γ = {sigma_allow:.6g} N/mm²"],
+        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq:.6g} MPa"],
+        ["许用应力", f"σallow = fy = {sigma_allow:.6g} MPa"],
         ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
     ]
     return _table_html(["步骤", "计算说明"], rows)
