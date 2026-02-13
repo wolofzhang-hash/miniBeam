@@ -98,6 +98,7 @@ class BeamCanvas(QGraphicsView):
 
     def __init__(self, view_plane: str = "XY"):
         super().__init__()
+        self._translator = lambda key, **kwargs: key.format(**kwargs) if kwargs else key
         from PyQt6.QtGui import QPainter
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.scene = QGraphicsScene(self)
@@ -164,6 +165,12 @@ class BeamCanvas(QGraphicsView):
         # Connect once. Re-connecting on every redraw can lead to duplicated
         # signals (and in rare cases crashes when combined with scene clears).
         self.scene.selectionChanged.connect(self._on_selection_changed)
+
+    def set_translator(self, translator):
+        self._translator = translator
+
+    def _t(self, key: str, **kwargs) -> str:
+        return self._translator(key, **kwargs)
 
     def set_view_plane(self, view_plane: str):
         self.view_plane = view_plane if view_plane in ("XY", "XZ") else "XY"
@@ -1074,20 +1081,20 @@ class BeamCanvas(QGraphicsView):
             # synchronously for programmatic selection changes).
             QTimer.singleShot(0, self.selection_changed.emit)
             # Point context menu (edit, do not create duplicates)
-            a_c = QAction("Constraint...", self)
+            a_c = QAction(self._t("ctx.constraint"), self)
             a_c.triggered.connect(lambda: self.request_edit_constraints.emit())
             menu.addAction(a_c)
 
-            a_b = QAction("Bush...", self)
+            a_b = QAction(self._t("ctx.bush"), self)
             a_b.triggered.connect(lambda: self.request_edit_bushes.emit())
             menu.addAction(a_b)
 
-            a_l = QAction("Load...", self)
+            a_l = QAction(self._t("ctx.load"), self)
             a_l.triggered.connect(lambda: self.request_edit_nodal_loads.emit())
             menu.addAction(a_l)
 
             menu.addSeparator()
-            a_del = QAction("Delete Point", self)
+            a_del = QAction(self._t("ctx.delete_point"), self)
             a_del.triggered.connect(lambda: self.request_delete_selected_points.emit())
             menu.addAction(a_del)
 
@@ -1099,18 +1106,18 @@ class BeamCanvas(QGraphicsView):
             member_item.setSelected(True)
             QTimer.singleShot(0, self.selection_changed.emit)
 
-            a_udl = QAction("Distributed Load...", self)
+            a_udl = QAction(self._t("ctx.udl"), self)
             a_udl.triggered.connect(lambda: self.request_edit_member_udl.emit())
             menu.addAction(a_udl)
 
         else:
             # Blank area context menu
-            a_add = QAction("Add Point Here", self)
+            a_add = QAction(self._t("ctx.add_point_here"), self)
             a_add.triggered.connect(lambda: self.point_added.emit(float(scene_pos.x())))
             menu.addAction(a_add)
 
             if self.selected_point_uids():
-                a_del = QAction("Delete Selected Point(s)", self)
+                a_del = QAction(self._t("ctx.delete_selected_points"), self)
                 a_del.triggered.connect(lambda: self.request_delete_selected_points.emit())
                 menu.addAction(a_del)
 
