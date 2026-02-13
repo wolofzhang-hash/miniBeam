@@ -6,8 +6,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QRadioButton, QTextBrowser
 )
 from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
-from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices, QFontMetrics, QTextDocument, QPageSize
-from PyQt6.QtPrintSupport import QPrinter
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices, QFontMetrics
 from PyQt6.QtWidgets import QStyle, QFileDialog, QHeaderView
 
 import sys
@@ -1203,34 +1202,22 @@ class MainWindow(QMainWindow):
             self,
             self._tr("action.export_report"),
             "report.html",
-            "HTML Files (*.html);;PDF Files (*.pdf)",
+            "HTML Files (*.html)",
         )
         if not fn:
             return
 
         html = build_standard_report_html(self.project, self.last_results)
         try:
-            suffix = Path(fn).suffix.lower()
-            if suffix == ".pdf":
-                doc = QTextDocument(self)
-                doc.setHtml(html)
-                printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-                printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                printer.setOutputFileName(fn)
-                printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-                # Keep QTextDocument layout width aligned with PDF printable width,
-                # otherwise Qt may lay out against an unconstrained page and then
-                # uniformly shrink on print, causing visual scale mismatch.
-                doc.setDocumentMargin(0)
-                doc.setPageSize(printer.pageRect(QPrinter.Unit.Point).size())
-                doc.print(printer)
-            else:
-                Path(fn).write_text(html, encoding="utf-8")
+            out = Path(fn)
+            if out.suffix.lower() != ".html":
+                out = out.with_suffix(".html")
+            out.write_text(html, encoding="utf-8")
         except Exception as e:
             QMessageBox.critical(self, "Export Report", self._tr("msg.export_failed", error=e))
             return
 
-        QMessageBox.information(self, "Export Report", self._tr("msg.export_ok", path=fn))
+        QMessageBox.information(self, "Export Report", self._tr("msg.export_ok", path=str(out)))
 
     def on_point_added(self, x: float):
         before = self.project.to_dict()
