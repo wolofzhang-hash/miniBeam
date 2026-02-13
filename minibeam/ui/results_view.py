@@ -136,6 +136,16 @@ class ResultsView(QWidget):
         x_for_click = np.array([], dtype=float)
         y_for_click = np.array([], dtype=float)
 
+        aliases = {
+            "Deflection y": "Deflection",
+            "Rotation z": "Rotation θ",
+            "Deflection z": "Deflection Z",
+            "Rotation y": "Rotation Y",
+            "Shear Vy": "Shear V",
+            "Moment Mz": "Moment M",
+        }
+        rtype = aliases.get(rtype, rtype)
+
         if rtype == "Deflection":
             if getattr(out, "x_diag", None) is not None and np.asarray(out.x_diag).size:
                 x, dy_raw = _clip(out.x_diag, out.dy_diag)
@@ -272,9 +282,9 @@ class ResultsView(QWidget):
                     ax.plot(x_vals, np.ma.masked_where(~mask, y_vals), color=color, linewidth=lw, alpha=alpha, label=lbl)
 
             has_plastic_correction = bool(ms_plastic.size) and bool(ms_elastic.size) and not np.allclose(ms_plastic, ms_elastic, rtol=1e-5, atol=1e-8)
-            _plot_ms_bands(xm2n, ms_elastic, label="MS 弹性", alpha=0.65 if has_plastic_correction else 0.95, lw=1.8 if has_plastic_correction else 2.2)
+            _plot_ms_bands(xm2n, ms_elastic, label="MS Elastic", alpha=0.65 if has_plastic_correction else 0.95, lw=1.8 if has_plastic_correction else 2.2)
             if has_plastic_correction:
-                _plot_ms_bands(xm2n, ms_plastic, label="MS 塑性修正", alpha=0.95, lw=2.4)
+                _plot_ms_bands(xm2n, ms_plastic, label="MS Plastic Corrected", alpha=0.95, lw=2.4)
             _draw_zero_line()
             ax.axhline(2.0, linewidth=1, color="#66aa66", linestyle=":")
             lo = float(min(np.min(ms_elastic), np.min(ms_plastic))) if ms_plastic.size else -1.0
@@ -315,7 +325,7 @@ class PlotSlot:
 
 
 class ResultsGridDialog(QDialog):
-    RESULT_TYPES = [
+    RESULT_TYPES_2D = [
         "Deflection",
         "Rotation θ",
         "Deflection Z",
@@ -325,6 +335,22 @@ class ResultsGridDialog(QDialog):
         "Shear Vz",
         "Moment M",
         "Moment My",
+        "Torsion T",
+        "Torsion τ",
+        "Stress σ",
+        "Margin MS",
+    ]
+
+    RESULT_TYPES_3D = [
+        "Deflection y",
+        "Rotation z",
+        "Deflection z",
+        "Rotation y",
+        "Axial N",
+        "Shear Vy",
+        "Shear Vz",
+        "Moment My",
+        "Moment Mz",
         "Torsion T",
         "Torsion τ",
         "Stress σ",
@@ -353,6 +379,7 @@ class ResultsGridDialog(QDialog):
         self.out = out
         self.def_scale = def_scale
         self._translator = translator or (lambda key, **kwargs: key.format(**kwargs) if kwargs else key)
+        self.result_types = self.RESULT_TYPES_3D if getattr(prj, "spatial_mode", "2D") == "3D" else self.RESULT_TYPES_2D
         self.setWindowTitle(self._t("results.multiview", combo=out.combo))
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(1400, 900)
@@ -409,8 +436,8 @@ class ResultsGridDialog(QDialog):
 
             cmb = QComboBox()
             cmb.addItem(self._t("empty"))
-            cmb.addItems(self.RESULT_TYPES)
-            if idx < len(self.RESULT_TYPES):
+            cmb.addItems(self.result_types)
+            if idx < len(self.result_types):
                 cmb.setCurrentIndex(idx + 1)
             else:
                 cmb.setCurrentIndex(0)
