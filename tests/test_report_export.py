@@ -20,7 +20,7 @@ class TestReportExport(unittest.TestCase):
 
         mat = Material(name="S355")
         mat_unused = Material(name="UnusedMat")
-        sec = Section(name="Rect")
+        sec = Section(name="Rect", p1=100.0, p2=10.0)
         sec_unused = Section(name="UnusedSec")
         prj.materials[mat.uid] = mat
         prj.materials[mat_unused.uid] = mat_unused
@@ -60,10 +60,12 @@ class TestReportExport(unittest.TestCase):
         self.assertIn("荷载 / 边界条件", html)
         self.assertIn("建模截图与 FBD", html)
         self.assertIn("材料与截面信息", html)
-        self.assertIn("Member Assign 列表", html)
+        self.assertIn("单元属性", html)
         self.assertIn("M1", html)
         self.assertIn("S355", html)
         self.assertIn("Rect", html)
+        self.assertIn("关键尺寸(mm)", html)
+        self.assertIn("b=100, h=10", html)
         self.assertIn("生成时间", html)
         self.assertIn("峰值表", html)
         self.assertIn("关键截面验算", html)
@@ -92,7 +94,7 @@ class TestReportExport(unittest.TestCase):
         prj.points[p2.uid] = p2
 
         mat = Material(name="S355")
-        sec = Section(name="Rect")
+        sec = Section(name="Rect", p1=100.0, p2=10.0)
         prj.materials[mat.uid] = mat
         prj.sections[sec.uid] = sec
         m = Member(name="M1", i_uid=p1.uid, j_uid=p2.uid, material_uid=mat.uid, section_uid=sec.uid)
