@@ -8,12 +8,14 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import font_manager
 
 from .model import Project
 from .pynite_adapter import SolveOutput
 
 
 def build_standard_report_html(project: Project, results: SolveOutput, *, title: str = "MiniBeam 结构验算报告") -> str:
+    _configure_matplotlib_fonts()
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     summary_rows = _project_summary_rows(project, results)
     load_rows = _load_boundary_rows(project)
@@ -33,7 +35,7 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
   <meta charset=\"utf-8\" />
   <title>{escape(title)}</title>
   <style>
-    body {{ font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; margin: 18px 24px; color: #222; }}
+    body {{ font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; margin: 18px 24px; color: #222; max-width: 980px; }}
     h1 {{ font-size: 22px; margin: 0 0 8px; }}
     h2 {{ font-size: 16px; margin: 18px 0 8px; border-left: 4px solid #2f6fab; padding-left: 8px; }}
     h3 {{ font-size: 13px; margin: 12px 0 6px; color: #334; }}
@@ -42,7 +44,7 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
     th, td {{ border: 1px solid #d9d9d9; padding: 6px; text-align: left; vertical-align: top; }}
     th {{ background: #f6f8fa; }}
     .muted {{ color: #777; font-style: italic; }}
-    .plot img {{ width: 100%; border: 1px solid #ddd; }}
+    .plot img {{ width: 100%; max-width: 820px; height: auto; border: 1px solid #ddd; display: block; margin: 0 auto; }}
   </style>
 </head>
 <body>
@@ -241,7 +243,7 @@ def _build_model_image_tag(project: Project) -> str:
     if not points:
         return "<div class='muted'>无模型数据</div>"
 
-    fig, ax = plt.subplots(figsize=(10.2, 2.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(8.4, 2.6), dpi=140)
     for m in project.members.values():
         pi = project.points.get(m.i_uid)
         pj = project.points.get(m.j_uid)
@@ -254,7 +256,19 @@ def _build_model_image_tag(project: Project) -> str:
         ax.scatter([p.x], [0.0], color="#2f6fab", s=25, zorder=3)
         ax.text(p.x, -0.1, p.name or p.uid, ha="center", va="top", fontsize=8)
 
-    ax.set_title("建模截图（梁线模型）", fontsize=10)
+        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in ("DY", "DZ", "RZ", "RY"))
+        if constrained:
+            ax.scatter([p.x], [-0.045], color="#27ae60", marker="v", s=40, zorder=3)
+            ax.text(p.x, -0.16, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
+
+        for ld in p.nodal_loads:
+            if ld.direction not in ("FY", "FZ"):
+                continue
+            sign = -1 if ld.value < 0 else 1
+            y2 = 0.2 * sign
+            ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.02), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.2))
+
+    ax.set_title("Model view (beam line)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
     ax.grid(True, axis="x", linestyle="--", linewidth=0.5, alpha=0.5)
@@ -270,9 +284,26 @@ def _build_fbd_image_tag(project: Project, results: SolveOutput) -> str:
     if not points:
         return "<div class='muted'>无 FBD 数据</div>"
 
-    fig, ax = plt.subplots(figsize=(10.2, 2.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(8.4, 2.6), dpi=140)
     xs = [p.x for p in points]
     ax.plot([min(xs), max(xs)], [0.0, 0.0], color="#444", linewidth=2)
+
+    for m in project.members.values():
+        pi = project.points.get(m.i_uid)
+        pj = project.points.get(m.j_uid)
+        if pi is None or pj is None:
+            continue
+        xm = (pi.x + pj.x) * 0.5
+        for ld in m.udl_loads:
+            if ld.direction != "Fy":
+                continue
+            w_avg = 0.5 * (float(ld.w1) + float(ld.w2))
+            if abs(w_avg) <= 0.0:
+                continue
+            sign = -1 if w_avg < 0 else 1
+            y2 = 0.3 * sign
+            ax.annotate("", xy=(xm, y2), xytext=(xm, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
+            ax.text(xm, y2 + (0.02 * sign), f"w={w_avg:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
 
     for p in points:
         for ld in p.nodal_loads:
@@ -283,7 +314,10 @@ def _build_fbd_image_tag(project: Project, results: SolveOutput) -> str:
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
             ax.text(p.x, y2 + (0.02 * sign), f"{ld.direction}={ld.value:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
 
-        rxn = (results.reactions or {}).get(p.name, {}) if p.name else {}
+        reactions = results.reactions or {}
+        rxn = reactions.get(p.name, {}) if p.name else {}
+        if not rxn:
+            rxn = reactions.get(p.uid, {})
         for key in ("FY", "FZ"):
             val = float(rxn.get(key, 0.0) or 0.0)
             if abs(val) <= 0.0:
@@ -293,7 +327,12 @@ def _build_fbd_image_tag(project: Project, results: SolveOutput) -> str:
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#27ae60", lw=1.5))
             ax.text(p.x, y2 - (0.02 * sign), f"R{key}={val:.3g}", color="#27ae60", ha="center", va="top" if sign > 0 else "bottom", fontsize=8)
 
-    ax.set_title("FBD（红: 荷载, 绿: 支反力）", fontsize=10)
+        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in ("DY", "DZ", "RZ", "RY"))
+        if constrained:
+            ax.scatter([p.x], [-0.035], color="#27ae60", marker="v", s=38, zorder=3)
+            ax.text(p.x, -0.09, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
+
+    ax.set_title("FBD (red: loads, green: reactions/supports)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
     ax.grid(True, axis="x", linestyle="--", linewidth=0.5, alpha=0.5)
@@ -310,17 +349,17 @@ def _build_material_section_image_tag(project: Project) -> str:
     if not mats and not secs:
         return "<div class='muted'>无材料/截面数据</div>"
 
-    fig, ax = plt.subplots(figsize=(10.2, 4.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(8.4, 4.0), dpi=140)
     ax.axis("off")
     y = 0.95
-    ax.text(0.02, y, "材料信息", fontsize=10, fontweight="bold", transform=ax.transAxes)
+    ax.text(0.02, y, "Material", fontsize=10, fontweight="bold", transform=ax.transAxes)
     y -= 0.06
     for m in mats[:8]:
         ax.text(0.03, y, f"{m.name}: E={m.E:.3g}, G={m.G:.3g}, ν={m.nu:.3g}, σy={m.sigma_y:.3g}", fontsize=8, transform=ax.transAxes)
         y -= 0.05
 
     y -= 0.03
-    ax.text(0.02, y, "截面信息", fontsize=10, fontweight="bold", transform=ax.transAxes)
+    ax.text(0.02, y, "Section", fontsize=10, fontweight="bold", transform=ax.transAxes)
     y -= 0.06
     for s in secs[:8]:
         ax.text(0.03, y, f"{s.name}({s.type}): A={s.A:.3g}, Iy={s.Iy:.3g}, Iz={s.Iz:.3g}, J={s.J:.3g}", fontsize=8, transform=ax.transAxes)
@@ -331,3 +370,26 @@ def _build_material_section_image_tag(project: Project) -> str:
     fig.savefig(buff, format="png")
     plt.close(fig)
     return f"<img alt='材料截面图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+
+
+def _configure_matplotlib_fonts() -> None:
+    preferred = [
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "WenQuanYi Zen Hei",
+        "Source Han Sans SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    available = []
+    for name in preferred:
+        try:
+            font_manager.findfont(name, fallback_to_default=False)
+            available.append(name)
+        except ValueError:
+            continue
+    if available:
+        plt.rcParams["font.family"] = "sans-serif"
+        plt.rcParams["font.sans-serif"] = available
+    plt.rcParams["axes.unicode_minus"] = False
