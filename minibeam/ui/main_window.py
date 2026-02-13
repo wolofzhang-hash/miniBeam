@@ -1021,6 +1021,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Validate", text)
 
     def solve_model(self):
+        self.project.normalize_member_assignments()
         msgs = validate_project(self.project)
         if any(m.level == "ERROR" for m in msgs):
             text = "\n".join([f"[{m.level}] {m.text}" for m in msgs])
