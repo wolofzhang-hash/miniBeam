@@ -1,15 +1,97 @@
 from __future__ import annotations
 
 import csv
+import json
+import platform
+import tempfile
 import warnings
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .. import __version__
+from .report_export import build_standard_report_html, export_result_plots
+
 
 class MemberResultExportError(RuntimeError):
     """Raised when aligned member result export cannot proceed."""
+
+
+def export_results_bundle_zip(project: Any, results: Any, output_zip_path: str | Path, *, base_name: str = "results") -> Path:
+    output_zip = Path(output_zip_path)
+    output_zip.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="minibeam_bundle_") as tmp_dir:
+        tmp = Path(tmp_dir)
+        project_json = tmp / f"{base_name}.project.json"
+        report_html = tmp / f"{base_name}.report.html"
+        results_csv = tmp / f"{base_name}.results.csv"
+        results_png = tmp / f"{base_name}.results.png"
+        results_svg = tmp / f"{base_name}.results.svg"
+        build_info_json = tmp / "build_info.json"
+
+        project_json.write_text(json.dumps(project.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        report_html.write_text(build_standard_report_html(project, results), encoding="utf-8")
+        _write_diag_results_csv(results, results_csv)
+        exported_images = export_result_plots(results, png_path=results_png, svg_path=results_svg)
+
+        build_info = {
+            "app": "MiniBeam",
+            "version": __version__,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "combo": getattr(results, "combo", ""),
+            "artifacts": {
+                "project_json": project_json.name,
+                "report_html": report_html.name,
+                "results_csv": results_csv.name,
+                "result_plots": [p.name for p in exported_images],
+            },
+        }
+        build_info_json.write_text(json.dumps(build_info, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        with zipfile.ZipFile(output_zip, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for item in (project_json, report_html, results_csv, build_info_json, *exported_images):
+                zf.write(item, arcname=item.name)
+
+    return output_zip
+
+
+def _write_diag_results_csv(results: Any, output_path: str | Path) -> Path:
+    x = np.asarray(getattr(results, "x_diag", []), dtype=float)
+    columns = {
+        "dy_mm": np.asarray(getattr(results, "dy_diag", []), dtype=float),
+        "dz_mm": np.asarray(getattr(results, "dz_diag", []), dtype=float),
+        "rz_rad": np.asarray(getattr(results, "rz_diag", []), dtype=float),
+        "ry_rad": np.asarray(getattr(results, "ry_diag", []), dtype=float),
+        "N_N": np.asarray(getattr(results, "N", []), dtype=float),
+        "V_N": np.asarray(getattr(results, "V", []), dtype=float),
+        "Vz_N": np.asarray(getattr(results, "Vz", []), dtype=float),
+        "M_Nmm": np.asarray(getattr(results, "M", []), dtype=float),
+        "My_Nmm": np.asarray(getattr(results, "My", []), dtype=float),
+        "T_Nmm": np.asarray(getattr(results, "T", []), dtype=float),
+        "sigma_MPa": np.asarray(getattr(results, "sigma", []), dtype=float),
+        "tau_torsion_MPa": np.asarray(getattr(results, "tau_torsion", []), dtype=float),
+        "MS": np.asarray(getattr(results, "margin", []), dtype=float),
+        "MS_elastic": np.asarray(getattr(results, "margin_elastic", []), dtype=float),
+        "MS_plastic": np.asarray(getattr(results, "margin_plastic", []), dtype=float),
+    }
+
+    fieldnames = ["combo", "x_mm", *columns.keys()]
+    out = Path(output_path)
+    with out.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for idx in range(x.size):
+            row = {"combo": getattr(results, "combo", ""), "x_mm": float(x[idx])}
+            for key, values in columns.items():
+                row[key] = float(values[idx]) if values.size == x.size else ""
+            writer.writerow(row)
+    return out
 
 
 def export_member_aligned_csv(
