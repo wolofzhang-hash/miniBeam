@@ -25,6 +25,7 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
     member_assign_rows = _member_assign_rows(project)
     peak_rows = _peak_rows(results)
     critical_rows = _critical_section_rows(results)
+    critical_calc_html = _critical_section_detail_html(project, results)
 
     model_fbd_img_tag = _build_model_fbd_image_tag(project, results)
     sec_img_tag = _build_section_image_tag(project)
@@ -74,6 +75,8 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
 
   <h2>6. 关键截面验算（按 MS 从小到大）</h2>
   {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(N/mm²)', 'τt(N/mm²)', 'MS'], critical_rows)}
+  <h3>6.1 最危险截面详细算例</h3>
+  {critical_calc_html}
 
   <h2>7. 结果图形</h2>
   <div class=\"plot\">{result_img_tag}</div>
@@ -245,16 +248,36 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
     if x.size == 0:
         return "<div class='muted'>无图形数据</div>"
 
-    fig, axes = plt.subplots(3, 2, figsize=(10.2, 9.4), dpi=140, constrained_layout=True)
     specs = [
         ("N (N)", np.asarray(results.N, dtype=float)),
-        ("V (N)", np.asarray(results.V, dtype=float)),
-        ("M (N·mm)", np.asarray(results.M, dtype=float)),
+        ("V_y (N)", np.asarray(results.V, dtype=float)),
+        ("M_z (N·mm)", np.asarray(results.M, dtype=float)),
+        ("V_z (N)", np.asarray(results.Vz, dtype=float)),
+        ("M_y (N·mm)", np.asarray(results.My, dtype=float)),
+        ("T (N·mm)", np.asarray(results.T, dtype=float)),
         ("dy (mm)", np.asarray(results.dy_diag, dtype=float)),
+        ("dz (mm)", np.asarray(results.dz_diag, dtype=float)),
+        ("rz (rad)", np.asarray(results.rz_diag, dtype=float)),
+        ("ry (rad)", np.asarray(results.ry_diag, dtype=float)),
         ("σ (N/mm²)", np.asarray(results.sigma, dtype=float)),
+        ("τt (N/mm²)", np.asarray(results.tau_torsion, dtype=float)),
         ("MS (-)", np.asarray(results.margin, dtype=float)),
+        ("MS elastic (-)", np.asarray(results.margin_elastic, dtype=float)),
+        ("MS plastic (-)", np.asarray(results.margin_plastic, dtype=float)),
     ]
-    for ax, (label, arr) in zip(axes.flat, specs):
+    specs = [(label, arr) for label, arr in specs if arr.size == x.size]
+    if not specs:
+        return "<div class='muted'>无图形数据</div>"
+
+    ncols = 3
+    nrows = int(np.ceil(len(specs) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12.2, 3.0 * nrows), dpi=140, constrained_layout=True)
+    axes_arr = np.atleast_1d(axes).ravel()
+    for idx, ax in enumerate(axes_arr):
+        if idx >= len(specs):
+            ax.axis("off")
+            continue
+        label, arr = specs[idx]
         if arr.size == x.size:
             ax.plot(x, arr, color="#2f6fab", linewidth=1.2)
         ax.set_title(label, fontsize=10)
@@ -267,7 +290,7 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
     return f"<img alt='结果图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
 
 
-def _draw_model_view(ax, project: Project) -> None:
+def _draw_model_view(ax, project: Project, *, plane: str) -> None:
     points = project.sorted_points()
     for m in project.members.values():
         pi = project.points.get(m.i_uid)
@@ -281,26 +304,27 @@ def _draw_model_view(ax, project: Project) -> None:
         ax.scatter([p.x], [0.0], color="#2f6fab", s=25, zorder=3)
         ax.text(p.x, -0.12, p.name or p.uid, ha="center", va="top", fontsize=8)
 
-        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in ("DY", "DZ", "RZ", "RY"))
+        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in (("DY", "RZ") if plane == "XY" else ("DZ", "RY")))
         if constrained:
             ax.scatter([p.x], [-0.055], color="#27ae60", marker="v", s=40, zorder=3)
             ax.text(p.x, -0.18, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
 
         for ld in p.nodal_loads:
-            if ld.direction not in ("FY", "FZ"):
+            target_dir = "FY" if plane == "XY" else "FZ"
+            if ld.direction != target_dir:
                 continue
             sign = -1 if ld.value < 0 else 1
             y2 = 0.23 * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.02), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.2))
 
-    ax.set_title("Model view (beam line)", fontsize=10)
+    ax.set_title(f"Model view ({plane} plane)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
     ax.set_ylim(-0.35, 0.35)
     ax.grid(True, axis="x", linestyle="--", linewidth=0.5, alpha=0.5)
 
 
-def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
+def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) -> None:
     points = project.sorted_points()
     xs = [p.x for p in points]
     ax.plot([min(xs), max(xs)], [0.0, 0.0], color="#444", linewidth=2)
@@ -312,7 +336,7 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
             continue
         xm = (pi.x + pj.x) * 0.5
         for ld in m.udl_loads:
-            if ld.direction != "Fy":
+            if ld.direction != "Fy" or plane != "XY":
                 continue
             w_avg = 0.5 * (float(ld.w1) + float(ld.w2))
             if abs(w_avg) <= 0.0:
@@ -324,7 +348,8 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
 
     for p in points:
         for ld in p.nodal_loads:
-            if ld.direction not in ("FY", "FZ"):
+            target_dir = "FY" if plane == "XY" else "FZ"
+            if ld.direction != target_dir:
                 continue
             sign = -1 if ld.value < 0 else 1
             y2 = 0.25 * sign
@@ -335,7 +360,7 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
         rxn = reactions.get(p.name, {}) if p.name else {}
         if not rxn:
             rxn = reactions.get(p.uid, {})
-        for key in ("FY", "FZ"):
+        for key in (("FY",) if plane == "XY" else ("FZ",)):
             val = float(rxn.get(key, 0.0) or 0.0)
             if abs(val) <= 0.0:
                 continue
@@ -344,12 +369,12 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput) -> None:
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#27ae60", lw=1.5))
             ax.text(p.x, y2 - (0.02 * sign), f"R{key}={val:.3g}", color="#27ae60", ha="center", va="top" if sign > 0 else "bottom", fontsize=8)
 
-        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in ("DY", "DZ", "RZ", "RY"))
+        constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in (("DY", "RZ") if plane == "XY" else ("DZ", "RY")))
         if constrained:
             ax.scatter([p.x], [-0.035], color="#27ae60", marker="v", s=38, zorder=3)
             ax.text(p.x, -0.09, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
 
-    ax.set_title("FBD (red: loads, green: reactions/supports)", fontsize=10)
+    ax.set_title(f"FBD ({plane}, red: loads, green: reactions/supports)", fontsize=10)
     ax.set_xlabel("x (mm)")
     ax.set_yticks([])
     ax.set_ylim(-0.35, 0.35)
@@ -361,14 +386,72 @@ def _build_model_fbd_image_tag(project: Project, results: SolveOutput) -> str:
     if not points:
         return "<div class='muted'>无模型/FBD数据</div>"
 
-    fig, axes = plt.subplots(2, 1, figsize=(8.6, 5.8), dpi=140, constrained_layout=True)
-    _draw_model_view(axes[0], project)
-    _draw_fbd_view(axes[1], project, results)
+    if project.spatial_mode == "3D":
+        fig, axes = plt.subplots(2, 2, figsize=(12.0, 6.2), dpi=140, constrained_layout=True)
+        _draw_model_view(axes[0, 0], project, plane="XY")
+        _draw_model_view(axes[0, 1], project, plane="XZ")
+        _draw_fbd_view(axes[1, 0], project, results, plane="XY")
+        _draw_fbd_view(axes[1, 1], project, results, plane="XZ")
+    else:
+        fig, axes = plt.subplots(2, 1, figsize=(8.6, 5.8), dpi=140, constrained_layout=True)
+        _draw_model_view(axes[0], project, plane="XY")
+        _draw_fbd_view(axes[1], project, results, plane="XY")
 
     buff = BytesIO()
     fig.savefig(buff, format="png")
     plt.close(fig)
     return f"<img alt='模型与FBD图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+
+
+def _critical_section_detail_html(project: Project, results: SolveOutput) -> str:
+    x = np.asarray(results.x_diag, dtype=float)
+    ms = np.asarray(results.margin, dtype=float)
+    if x.size == 0 or ms.size == 0:
+        return "<div class='muted'>无关键截面详细算例数据</div>"
+
+    idx = int(np.argmin(ms))
+    sec = _first_used_section(project)
+    if sec is None:
+        return "<div class='muted'>无关键截面详细算例数据</div>"
+
+    n_val = _arr_at(results.N, idx)
+    mz_val = _arr_at(results.M, idx)
+    my_val = _arr_at(results.My, idx)
+    t_val = _arr_at(results.T, idx)
+    sigma_val = _arr_at(results.sigma, idx)
+    tau_t_val = _arr_at(results.tau_torsion, idx)
+    ms_val = _arr_at(results.margin, idx)
+    sigma_eq = np.sqrt(float(np.asarray(results.sigma, dtype=float)[idx]) ** 2 + 3.0 * float(np.asarray(results.tau_torsion, dtype=float)[idx]) ** 2)
+    mat = _first_used_material(project)
+    sigma_allow = (float(mat.sigma_y) / max(float(getattr(project, "safety_factor", 1.5)), 1e-9)) if mat is not None else 0.0
+
+    rows = [
+        ["最危险位置", f"x={float(x[idx]):.3f} mm"],
+        ["采用截面", f"{sec.name} ({sec.type})"],
+        ["内力输入", f"N={n_val}, Mz={mz_val}, My={my_val}, T={t_val}"],
+        ["截面参数", f"A={sec.A:.6g}, Iz={sec.Iz:.6g}, Iy={sec.Iy:.6g}, J={sec.J:.6g}, cz={sec.c_z:.6g}, cy={sec.c_y:.6g}"],
+        ["应力结果", f"σ={sigma_val}, τt={tau_t_val}"],
+        ["等效应力", f"σeq = sqrt(σ² + 3τ²) = {sigma_eq:.6g} N/mm²"],
+        ["许用应力", f"σallow = fy/γ = {sigma_allow:.6g} N/mm²"],
+        ["安全裕度", f"MS = σallow/|σeq|-1 = {ms_val}"],
+    ]
+    return _table_html(["步骤", "计算说明"], rows)
+
+
+def _first_used_section(project: Project) -> Section | None:
+    for m in project.members.values():
+        sec = project.sections.get(m.section_uid)
+        if sec is not None:
+            return sec
+    return None
+
+
+def _first_used_material(project: Project):
+    for m in project.members.values():
+        mat = project.materials.get(m.material_uid)
+        if mat is not None:
+            return mat
+    return None
 
 
 def _build_section_image_tag(project: Project) -> str:

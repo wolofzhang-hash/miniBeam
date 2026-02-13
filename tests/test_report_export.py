@@ -67,12 +67,65 @@ class TestReportExport(unittest.TestCase):
         self.assertIn("生成时间", html)
         self.assertIn("峰值表", html)
         self.assertIn("关键截面验算", html)
+        self.assertIn("最危险截面详细算例", html)
+        self.assertIn("σeq = sqrt(σ² + 3τ²)", html)
         self.assertIn("data:image/png;base64", html)
         self.assertIn("-0.2", html)
         self.assertIn("DY=0, RZ=0", html)
         self.assertIn("DX:k=1200", html)
         self.assertNotIn("UnusedMat", html)
         self.assertNotIn("UnusedSec", html)
+
+
+    def test_build_standard_report_html_3d_model_fbd_contains_two_view_titles(self):
+        prj = Project()
+        prj.spatial_mode = "3D"
+        p1 = Point(name="P1", x=0.0)
+        p2 = Point(name="P2", x=1000.0)
+        p1.constraints["DY"] = Constraint(dof="DY", enabled=True, value=0.0)
+        p1.constraints["DZ"] = Constraint(dof="DZ", enabled=True, value=0.0)
+        p1.constraints["RZ"] = Constraint(dof="RZ", enabled=True, value=0.0)
+        p1.constraints["RY"] = Constraint(dof="RY", enabled=True, value=0.0)
+        p2.nodal_loads.append(NodalLoad(direction="FY", value=-200.0, case="LC1"))
+        p2.nodal_loads.append(NodalLoad(direction="FZ", value=-300.0, case="LC1"))
+        prj.points[p1.uid] = p1
+        prj.points[p2.uid] = p2
+
+        mat = Material(name="S355")
+        sec = Section(name="Rect")
+        prj.materials[mat.uid] = mat
+        prj.sections[sec.uid] = sec
+        m = Member(name="M1", i_uid=p1.uid, j_uid=p2.uid, material_uid=mat.uid, section_uid=sec.uid)
+        prj.members[m.uid] = m
+
+        x = np.array([0.0, 500.0, 1000.0])
+        out = SolveOutput(
+            combo="COMB1",
+            x_nodes=[0.0, 1000.0],
+            dy_nodes=[0.0, -1.0],
+            dz_nodes=[0.0, -0.5],
+            reactions={"P1": {"FY": 500.0, "FZ": 600.0}},
+            x_diag=x,
+            dy_diag=np.array([0.0, -1.0, -0.1]),
+            rz_diag=np.array([0.0, 0.01, 0.0]),
+            dz_diag=np.array([0.0, -0.5, -0.1]),
+            ry_diag=np.array([0.0, 0.02, 0.0]),
+            N=np.array([10.0, -20.0, 3.0]),
+            V=np.array([2.0, 8.0, -1.0]),
+            M=np.array([0.0, 2000.0, 0.0]),
+            Vz=np.array([1.0, 3.0, 0.0]),
+            My=np.array([0.0, 1200.0, 0.0]),
+            T=np.array([0.0, 10.0, 0.0]),
+            sigma=np.array([1.0, 50.0, 2.0]),
+            tau_torsion=np.array([0.1, 0.3, 0.2]),
+            margin=np.array([0.8, -0.2, 0.1]),
+            margin_elastic=np.array([0.7, -0.1, 0.2]),
+            margin_plastic=np.array([0.8, -0.2, 0.1]),
+        )
+
+        html = build_standard_report_html(prj, out)
+
+        self.assertIn("data:image/png;base64", html)
 
 
 if __name__ == "__main__":
