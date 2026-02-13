@@ -323,6 +323,16 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
 
 
 def _draw_model_view(ax, project: Project, *, plane: str) -> None:
+    load_dir = "FY" if plane == "XY" else "FZ"
+    load_values = [float(ld.value) for p in project.sorted_points() for ld in p.nodal_loads if ld.direction == load_dir]
+    max_abs_load = max((abs(v) for v in load_values), default=0.0)
+
+    def _scaled_arrow_len(value: float, max_abs: float, *, min_len: float = 0.10, max_len: float = 0.24) -> float:
+        if max_abs <= 0.0:
+            return min_len
+        ratio = abs(value) / max_abs
+        return min_len + (max_len - min_len) * ratio
+
     points = project.sorted_points()
     for m in project.members.values():
         pi = project.points.get(m.i_uid)
@@ -338,7 +348,7 @@ def _draw_model_view(ax, project: Project, *, plane: str) -> None:
 
         constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in (("DY", "RZ") if plane == "XY" else ("DZ", "RY")))
         if constrained:
-            ax.scatter([p.x], [-0.055], color="#27ae60", marker="v", s=40, zorder=3)
+            ax.scatter([p.x], [-0.055], color="#27ae60", marker="^", s=40, zorder=3)
             ax.text(p.x, -0.18, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
 
         for ld in p.nodal_loads:
@@ -346,8 +356,17 @@ def _draw_model_view(ax, project: Project, *, plane: str) -> None:
             if ld.direction != target_dir:
                 continue
             sign = -1 if ld.value < 0 else 1
-            y2 = 0.23 * sign
+            y2 = _scaled_arrow_len(float(ld.value), max_abs_load) * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.02), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.2))
+            ax.text(
+                p.x,
+                y2 + (0.02 * sign),
+                f"{ld.direction}={ld.value:.3g}",
+                color="#c0392b",
+                ha="center",
+                va="bottom" if sign > 0 else "top",
+                fontsize=8,
+            )
 
     ax.set_title(f"Model view ({plane} plane)", fontsize=10)
     ax.set_xlabel("x (mm)")
@@ -360,6 +379,34 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
     points = project.sorted_points()
     xs = [p.x for p in points]
     ax.plot([min(xs), max(xs)], [0.0, 0.0], color="#444", linewidth=2)
+
+    load_dir = "FY" if plane == "XY" else "FZ"
+    nodal_load_values = [float(ld.value) for p in points for ld in p.nodal_loads if ld.direction == load_dir]
+    udl_values = []
+    if plane == "XY":
+        for m in project.members.values():
+            for ld in m.udl_loads:
+                if ld.direction == "Fy":
+                    udl_values.append(0.5 * (float(ld.w1) + float(ld.w2)))
+    max_abs_load = max((abs(v) for v in (nodal_load_values + udl_values)), default=0.0)
+
+    reactions = results.reactions or {}
+    reaction_values = []
+    for p in points:
+        rxn = reactions.get(p.name, {}) if p.name else {}
+        if not rxn:
+            rxn = reactions.get(p.uid, {})
+        if plane == "XY":
+            reaction_values.append(float(rxn.get("FY", 0.0) or 0.0))
+        else:
+            reaction_values.append(float(rxn.get("FZ", 0.0) or 0.0))
+    max_abs_reaction = max((abs(v) for v in reaction_values), default=0.0)
+
+    def _scaled_arrow_len(value: float, max_abs: float, *, min_len: float = 0.10, max_len: float = 0.26) -> float:
+        if max_abs <= 0.0:
+            return min_len
+        ratio = abs(value) / max_abs
+        return min_len + (max_len - min_len) * ratio
 
     for m in project.members.values():
         pi = project.points.get(m.i_uid)
@@ -374,7 +421,7 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             if abs(w_avg) <= 0.0:
                 continue
             sign = -1 if w_avg < 0 else 1
-            y2 = 0.3 * sign
+            y2 = _scaled_arrow_len(w_avg, max_abs_load) * sign
             ax.annotate("", xy=(xm, y2), xytext=(xm, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
             ax.text(xm, y2 + (0.02 * sign), f"w={w_avg:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
 
@@ -384,11 +431,10 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             if ld.direction != target_dir:
                 continue
             sign = -1 if ld.value < 0 else 1
-            y2 = 0.25 * sign
+            y2 = _scaled_arrow_len(float(ld.value), max_abs_load) * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.5))
             ax.text(p.x, y2 + (0.02 * sign), f"{ld.direction}={ld.value:.3g}", color="#c0392b", ha="center", va="bottom" if sign > 0 else "top", fontsize=8)
 
-        reactions = results.reactions or {}
         rxn = reactions.get(p.name, {}) if p.name else {}
         if not rxn:
             rxn = reactions.get(p.uid, {})
@@ -397,13 +443,13 @@ def _draw_fbd_view(ax, project: Project, results: SolveOutput, *, plane: str) ->
             if abs(val) <= 0.0:
                 continue
             sign = 1 if val > 0 else -1
-            y2 = -0.25 * sign
+            y2 = -_scaled_arrow_len(val, max_abs_reaction) * sign
             ax.annotate("", xy=(p.x, y2), xytext=(p.x, 0.0), arrowprops=dict(arrowstyle="->", color="#27ae60", lw=1.5))
             ax.text(p.x, y2 - (0.02 * sign), f"R{key}={val:.3g}", color="#27ae60", ha="center", va="top" if sign > 0 else "bottom", fontsize=8)
 
         constrained = sorted(dof for dof, c in p.constraints.items() if c.enabled and dof in (("DY", "RZ") if plane == "XY" else ("DZ", "RY")))
         if constrained:
-            ax.scatter([p.x], [-0.035], color="#27ae60", marker="v", s=38, zorder=3)
+            ax.scatter([p.x], [-0.035], color="#27ae60", marker="^", s=38, zorder=3)
             ax.text(p.x, -0.09, "/".join(constrained), color="#27ae60", ha="center", va="top", fontsize=7)
 
     ax.set_title(f"FBD ({plane}, red: loads, green: reactions/supports)", fontsize=10)
