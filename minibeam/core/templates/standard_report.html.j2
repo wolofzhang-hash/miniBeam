@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ title }}</title>
+  <style>
+    body { font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; margin: 18px 24px; color: #222; max-width: 980px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    h2 { font-size: 16px; margin: 18px 0 8px; border-left: 4px solid #2f6fab; padding-left: 8px; }
+    h3 { font-size: 13px; margin: 12px 0 6px; color: #334; }
+    .meta { color: #666; font-size: 12px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 10px; }
+    th, td { border: 1px solid #d9d9d9; padding: 6px; text-align: left; vertical-align: top; }
+    th { background: #f6f8fa; }
+    .muted { color: #777; font-style: italic; }
+    .plot img { width: 100%; max-width: 820px; height: auto; border: 1px solid #ddd; display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <div class="meta">组合: {{ combo }} | 单位: mm-N-Nmm | 生成时间: {{ generated_at }}</div>
+
+  <h2>1. 项目摘要</h2>
+  {{ summary_table | safe }}
+
+  <h2>2. 荷载 / 边界条件</h2>
+  {{ load_table | safe }}
+
+  <h2>3. 建模截图与 FBD</h2>
+  <div class="plot">{{ model_fbd_img_tag | safe }}</div>
+
+  <h2>4. 材料与截面信息</h2>
+  {{ material_table | safe }}
+  {{ section_table | safe }}
+  <h3>4.1 单元属性</h3>
+  {{ member_assign_table | safe }}
+  <h3>4.2 截面截图</h3>
+  <div class="plot">{{ section_img_tag | safe }}</div>
+
+  <h2>5. 峰值表</h2>
+  {{ peak_table | safe }}
+
+  <h2>6. 关键截面验算（按 MS_elastic 从小到大）</h2>
+  {{ critical_table | safe }}
+  <h3>6.1 最危险截面详细算例</h3>
+  {{ critical_calc_html | safe }}
+
+  <h2>7. 各杆件强度计算表</h2>
+  {{ member_strength_html | safe }}
+
+  <h2>8. 结果图形</h2>
+  <div class="plot">{{ result_img_tag | safe }}</div>
+</body>
+</html>

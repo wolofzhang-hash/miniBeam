@@ -5,9 +5,11 @@ from datetime import datetime
 from html import escape
 from io import BytesIO
 from pathlib import Path
+from functools import lru_cache
 
 import matplotlib.pyplot as plt
 import numpy as np
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from matplotlib import font_manager
 from matplotlib.patches import Circle, Polygon, Rectangle
 
@@ -32,61 +34,36 @@ def build_standard_report_html(project: Project, results: SolveOutput, *, title:
     sec_img_tag = _build_section_image_tag(project)
     result_img_tag = _build_plot_image_tag(results)
 
-    return f"""<!doctype html>
-<html lang=\"zh-CN\">
-<head>
-  <meta charset=\"utf-8\" />
-  <title>{escape(title)}</title>
-  <style>
-    body {{ font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; margin: 18px 24px; color: #222; max-width: 980px; }}
-    h1 {{ font-size: 22px; margin: 0 0 8px; }}
-    h2 {{ font-size: 16px; margin: 18px 0 8px; border-left: 4px solid #2f6fab; padding-left: 8px; }}
-    h3 {{ font-size: 13px; margin: 12px 0 6px; color: #334; }}
-    .meta {{ color: #666; font-size: 12px; margin-bottom: 8px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 10px; }}
-    th, td {{ border: 1px solid #d9d9d9; padding: 6px; text-align: left; vertical-align: top; }}
-    th {{ background: #f6f8fa; }}
-    .muted {{ color: #777; font-style: italic; }}
-    .plot img {{ width: 100%; max-width: 820px; height: auto; border: 1px solid #ddd; display: block; margin: 0 auto; }}
-  </style>
-</head>
-<body>
-  <h1>{escape(title)}</h1>
-  <div class=\"meta\">组合: {escape(results.combo)} | 单位: mm-N-Nmm | 生成时间: {escape(generated_at)}</div>
+    return _get_report_template().render(
+        title=title,
+        combo=results.combo,
+        generated_at=generated_at,
+        summary_table=_table_html(["项目", "值"], summary_rows),
+        load_table=_table_html(["类别", "对象", "明细"], load_rows),
+        model_fbd_img_tag=model_fbd_img_tag,
+        material_table=_table_html(["材料", "E", "G", "nu", "rho", "σy"], material_rows),
+        section_table=_table_html(["截面", "type", "关键尺寸(mm)", "A", "Iy", "Iz", "J", "cy", "cz"], section_rows),
+        member_assign_table=_table_html(["杆件", "i-j", "材料", "截面"], member_assign_rows),
+        section_img_tag=sec_img_tag,
+        peak_table=_table_html(["指标", "峰值", "位置 x(mm)"], peak_rows),
+        critical_table=_table_html(
+            ["序号", "x(mm)", "N(N)", "V(N)", "M(N·mm)", "T(N·mm)", "σ(MPa)", "τt(MPa)", "MS_elastic", "MS_plastic"],
+            critical_rows,
+        ),
+        critical_calc_html=critical_calc_html,
+        member_strength_html=member_strength_html,
+        result_img_tag=result_img_tag,
+    )
 
-  <h2>1. 项目摘要</h2>
-  {_table_html(['项目', '值'], summary_rows)}
 
-  <h2>2. 荷载 / 边界条件</h2>
-  {_table_html(['类别', '对象', '明细'], load_rows)}
-
-  <h2>3. 建模截图与 FBD</h2>
-  <div class=\"plot\">{model_fbd_img_tag}</div>
-
-  <h2>4. 材料与截面信息</h2>
-  {_table_html(['材料', 'E', 'G', 'nu', 'rho', 'σy'], material_rows)}
-  {_table_html(['截面', 'type', '关键尺寸(mm)', 'A', 'Iy', 'Iz', 'J', 'cy', 'cz'], section_rows)}
-  <h3>4.1 单元属性</h3>
-  {_table_html(['杆件', 'i-j', '材料', '截面'], member_assign_rows)}
-  <h3>4.2 截面截图</h3>
-  <div class=\"plot\">{sec_img_tag}</div>
-
-  <h2>5. 峰值表</h2>
-  {_table_html(['指标', '峰值', '位置 x(mm)'], peak_rows)}
-
-  <h2>6. 关键截面验算（按 MS_elastic 从小到大）</h2>
-  {_table_html(['序号', 'x(mm)', 'N(N)', 'V(N)', 'M(N·mm)', 'T(N·mm)', 'σ(MPa)', 'τt(MPa)', 'MS_elastic', 'MS_plastic'], critical_rows)}
-  <h3>6.1 最危险截面详细算例</h3>
-  {critical_calc_html}
-
-  <h2>7. 各杆件强度计算表</h2>
-  {member_strength_html}
-
-  <h2>8. 结果图形</h2>
-  <div class=\"plot\">{result_img_tag}</div>
-</body>
-</html>
-"""
+@lru_cache(maxsize=1)
+def _get_report_template():
+    template_dir = Path(__file__).resolve().parent / "templates"
+    env = Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=select_autoescape(enabled_extensions=("html",)),
+    )
+    return env.get_template("standard_report.html.j2")
 
 
 def export_standard_report_html(project: Project, results: SolveOutput, output_path: str | Path) -> Path:
@@ -288,10 +265,41 @@ def _arr_at(arr: np.ndarray, idx: int, digits: int | None = None) -> str:
 
 
 def _build_plot_image_tag(results: SolveOutput) -> str:
-    x = np.asarray(results.x_diag, dtype=float)
-    if x.size == 0:
+    fig = _build_results_figure(results)
+    if fig is None:
         return "<div class='muted'>无图形数据</div>"
 
+    buff = BytesIO()
+    fig.savefig(buff, format="png")
+    plt.close(fig)
+    return f"<img alt='结果图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+
+
+def export_result_plots(results: SolveOutput, *, png_path: str | Path | None = None, svg_path: str | Path | None = None) -> list[Path]:
+    fig = _build_results_figure(results)
+    if fig is None:
+        return []
+
+    exported: list[Path] = []
+    try:
+        if png_path is not None:
+            png_out = Path(png_path)
+            fig.savefig(png_out, format="png")
+            exported.append(png_out)
+        if svg_path is not None:
+            svg_out = Path(svg_path)
+            fig.savefig(svg_out, format="svg")
+            exported.append(svg_out)
+    finally:
+        plt.close(fig)
+
+    return exported
+
+
+def _build_results_figure(results: SolveOutput):
+    x = np.asarray(results.x_diag, dtype=float)
+    if x.size == 0:
+        return None
     specs = [
         ("N (N)", np.asarray(results.N, dtype=float)),
         ("V_y (N)", np.asarray(results.V, dtype=float)),
@@ -307,16 +315,13 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
         ("τt (MPa)", np.asarray(results.tau_torsion, dtype=float)),
     ]
     specs = [(label, arr) for label, arr in specs if arr.size == x.size]
-
     ms_elastic = np.asarray(getattr(results, "margin_elastic", results.margin), dtype=float)
     ms_plastic = np.asarray(getattr(results, "margin_plastic", results.margin), dtype=float)
     ms_available = ms_elastic.size == x.size and ms_plastic.size == x.size
     if ms_available:
         specs.append(("MS elastic + plastic (-)", np.array([], dtype=float)))
-
     if not specs:
-        return "<div class='muted'>无图形数据</div>"
-
+        return None
     ncols = 3
     nrows = int(np.ceil(len(specs) / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(12.2, 3.0 * nrows), dpi=140, constrained_layout=True)
@@ -327,28 +332,13 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
             continue
         label, arr = specs[idx]
         if label == "MS elastic + plastic (-)" and ms_available:
-            for y_vals, curve_label, line_style, alpha in (
-                (ms_elastic, "MS elastic", "--", 0.9),
-                (ms_plastic, "MS plastic", "-", 0.95),
-            ):
-                bands = [
-                    (y_vals < 0.0, "#d62728"),
-                    ((y_vals >= 0.0) & (y_vals <= 2.0), "#2ca02c"),
-                    (y_vals > 2.0, "#1f77b4"),
-                ]
+            for y_vals, curve_label, line_style, alpha in ((ms_elastic, "MS elastic", "--", 0.9), (ms_plastic, "MS plastic", "-", 0.95)):
+                bands = [(y_vals < 0.0, "#d62728"), ((y_vals >= 0.0) & (y_vals <= 2.0), "#2ca02c"), (y_vals > 2.0, "#1f77b4")]
                 first_segment = True
                 for mask, color in bands:
                     if np.count_nonzero(mask) < 2:
                         continue
-                    ax.plot(
-                        x,
-                        np.ma.masked_where(~mask, y_vals),
-                        color=color,
-                        linewidth=1.6,
-                        linestyle=line_style,
-                        alpha=alpha,
-                        label=curve_label if first_segment else None,
-                    )
+                    ax.plot(x, np.ma.masked_where(~mask, y_vals), color=color, linewidth=1.6, linestyle=line_style, alpha=alpha, label=curve_label if first_segment else None)
                     first_segment = False
             ax.axhline(0.0, linewidth=0.9, color="#333333")
             ax.axhline(2.0, linewidth=0.9, color="#66aa66", linestyle=":")
@@ -359,11 +349,7 @@ def _build_plot_image_tag(results: SolveOutput) -> str:
         ax.set_title(label, fontsize=10)
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
         ax.set_xlabel("x (mm)")
-
-    buff = BytesIO()
-    fig.savefig(buff, format="png")
-    plt.close(fig)
-    return f"<img alt='结果图' src='data:image/png;base64,{b64encode(buff.getvalue()).decode('ascii')}' />"
+    return fig
 
 
 def _draw_model_view(ax, project: Project, *, plane: str) -> None:

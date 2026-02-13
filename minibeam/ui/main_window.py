@@ -23,6 +23,7 @@ from ..core.section_props import rect_solid, circle_solid, i_section
 from ..core.validation import validate_project
 from ..core.pynite_adapter import solve_with_pynite, PyniteSolverError, SolveOutput
 from ..core.report_export import build_standard_report_html
+from ..core.export_results import export_results_bundle_zip
 
 from .canvas_view import BeamCanvas
 from .dialogs import MaterialManagerDialog, SectionManagerDialog
@@ -177,6 +178,7 @@ class MainWindow(QMainWindow):
         self.act_show_results = QAction(self._std_icon("SP_ComputerIcon", "SP_DesktopIcon"), self._tr("action.results"), self)
         self.act_export_csv = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.export_csv"), self)
         self.act_export_report = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.export_report"), self)
+        self.act_export_bundle = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.export_bundle"), self)
         self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), self._tr("action.help"), self)
         self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), self._tr("action.copyright"), self)
 
@@ -275,7 +277,7 @@ class MainWindow(QMainWindow):
 
         mk_tab("tab.solve_results", [
             mk_group("group.solve", [self.act_validate, self.act_solve]),
-            mk_group("group.results", [self.act_show_results, self.act_export_csv, self.act_export_report]),
+            mk_group("group.results", [self.act_show_results, self.act_export_csv, self.act_export_report, self.act_export_bundle]),
         ])
 
         mk_tab("tab.help", [
@@ -435,6 +437,7 @@ class MainWindow(QMainWindow):
         self.act_show_results.triggered.connect(self.show_results)
         self.act_export_csv.triggered.connect(self.export_results_csv)
         self.act_export_report.triggered.connect(self.export_standard_report)
+        self.act_export_bundle.triggered.connect(self.export_results_bundle)
         self.act_help_pdf.triggered.connect(self.open_help_pdf)
         self.act_about.triggered.connect(self.show_about_dialog)
         self.cmb_language.currentIndexChanged.connect(self._on_language_changed)
@@ -487,6 +490,7 @@ class MainWindow(QMainWindow):
         self.act_show_results.setText(self._tr("action.results"))
         self.act_export_csv.setText(self._tr("action.export_csv"))
         self.act_export_report.setText(self._tr("action.export_report"))
+        self.act_export_bundle.setText(self._tr("action.export_bundle"))
         self.act_help_pdf.setText(self._tr("action.help"))
         self.act_about.setText(self._tr("action.copyright"))
         self.act_undo.setText(self._tr("action.undo"))
@@ -530,7 +534,7 @@ class MainWindow(QMainWindow):
             "action.materials", "action.sections", "action.assign_property", "action.constraint", "action.bush",
             "action.load", "action.udl", "action.import", "action.calibrate", "action.opacity", "action.bw",
             "action.show_bg", "action.hide_bg", "action.clear", "action.validate", "action.solve",
-            "action.results", "action.export_csv", "action.export_report", "action.help", "action.copyright",
+            "action.results", "action.export_csv", "action.export_report", "action.export_bundle", "action.help", "action.copyright",
         ]
         max_text_w = 0
         for key in button_keys:
@@ -1204,6 +1208,31 @@ class MainWindow(QMainWindow):
             return
 
         QMessageBox.information(self, "Export Report", self._tr("msg.export_ok", path=str(out)))
+
+    def export_results_bundle(self):
+        if self.last_results is None:
+            QMessageBox.information(self, "Export Bundle", self._tr("msg.no_results"))
+            return
+
+        fn, _ = QFileDialog.getSaveFileName(
+            self,
+            self._tr("action.export_bundle"),
+            "results_bundle.zip",
+            "ZIP Files (*.zip)",
+        )
+        if not fn:
+            return
+
+        try:
+            out = Path(fn)
+            if out.suffix.lower() != ".zip":
+                out = out.with_suffix(".zip")
+            export_results_bundle_zip(self.project, self.last_results, out)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Bundle", self._tr("msg.export_failed", error=e))
+            return
+
+        QMessageBox.information(self, "Export Bundle", self._tr("msg.export_ok", path=str(out)))
 
     def on_point_added(self, x: float):
         before = self.project.to_dict()
