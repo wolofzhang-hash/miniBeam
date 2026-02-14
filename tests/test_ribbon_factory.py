@@ -187,7 +187,7 @@ def test_build_button_applies_uniform_width_for_all_sizes():
         assert button.max_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
 
 
-def test_main_ribbon_spec_uses_large_icons_for_interactive_items():
+def test_main_ribbon_spec_uses_medium_icons_for_interactive_items():
     from minibeam.ui.ribbon_setup import _build_spec
 
     class _MW:
@@ -203,4 +203,4 @@ def test_main_ribbon_spec_uses_large_icons_for_interactive_items():
     ]
 
     assert sizes
-    assert set(sizes) == {"L"}
+    assert set(sizes) == {"M"}
