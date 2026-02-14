@@ -4,14 +4,12 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 RibbonItemKind = Literal["action", "toggle", "widget"]
-RibbonItemSize = Literal["L", "M", "S"]
 
 
 @dataclass(slots=True)
 class RibbonItem:
     key: str
     kind: RibbonItemKind
-    size: RibbonItemSize
     text_override: str | None = None
 
 

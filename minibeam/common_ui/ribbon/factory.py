@@ -16,21 +16,11 @@ class RibbonFactoryBase(ABC):
 
 
 class PyQtRibbonFactory(RibbonFactoryBase):
-    UNIFORM_BUTTON_WIDTH = 116
-    COMPACT_RIBBON_STYLESHEET = """
-        QWidget {
-            font-size: 11px;
-        }
-        QToolButton {
-            padding: 2px 8px;
-        }
-    """
 
     def build(self, mainwindow: QMainWindow, spec: RibbonSpec, registry: ActionRegistry):
         from pyqtribbon import RibbonBar
 
         ribbonbar = RibbonBar(mainwindow)
-        self._apply_compact_ribbon_style(ribbonbar)
         for tab in spec.tabs:
             category = ribbonbar.addCategory(tab.title)
             for group in tab.groups:
@@ -46,15 +36,6 @@ class PyQtRibbonFactory(RibbonFactoryBase):
 
         return ribbonbar
 
-    @classmethod
-    def _apply_compact_ribbon_style(cls, ribbonbar):
-        if hasattr(ribbonbar, "setStyleSheet"):
-            ribbonbar.setStyleSheet(cls.COMPACT_RIBBON_STYLESHEET)
-        if hasattr(ribbonbar, "setMaximumHeight"):
-            ribbonbar.setMaximumHeight(92)
-        if hasattr(ribbonbar, "setMinimumHeight"):
-            ribbonbar.setMinimumHeight(78)
-
     def _render_item(self, panel, item: RibbonItem, registry: ActionRegistry):
         if item.kind == "widget":
             panel.addWidget(registry.get_widget(item.key))
@@ -64,7 +45,7 @@ class PyQtRibbonFactory(RibbonFactoryBase):
         text = item.text_override or action.text()
 
         if item.kind == "toggle":
-            button = self._build_button(panel, text, action.icon(), item.size)
+            button = self._build_button(panel, text, action.icon())
             button.setCheckable(True)
             button.setChecked(action.isChecked())
             button.clicked.connect(action.trigger)
@@ -72,7 +53,7 @@ class PyQtRibbonFactory(RibbonFactoryBase):
             self._bind_action_changed(button, action, text)
             return
 
-        button = self._build_button(panel, text, action.icon(), item.size)
+        button = self._build_button(panel, text, action.icon())
         button.clicked.connect(action.trigger)
         self._bind_action_changed(button, action, text)
 
@@ -90,24 +71,8 @@ class PyQtRibbonFactory(RibbonFactoryBase):
         on_action_changed()
 
     @staticmethod
-    def _build_button(panel, text, icon, size: str):
-        if size == "L":
-            button = panel.addLargeButton(text, icon)
-        elif size == "M":
-            button = panel.addMediumButton(text, icon)
-        else:
-            button = panel.addSmallButton(text, icon)
-
-        PyQtRibbonFactory._apply_uniform_button_width(button)
-        return button
-
-    @staticmethod
-    def _apply_uniform_button_width(button):
-        width = PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
-        if hasattr(button, "setMinimumWidth"):
-            button.setMinimumWidth(width)
-        if hasattr(button, "setMaximumWidth"):
-            button.setMaximumWidth(width)
+    def _build_button(panel, text, icon):
+        return panel.addLargeButton(text, icon)
 
     @staticmethod
     def _sync_button_state(button, action: QAction, default_text: str):
