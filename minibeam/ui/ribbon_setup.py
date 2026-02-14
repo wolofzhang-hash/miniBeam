@@ -29,7 +29,6 @@ def _build_registry(mainwindow) -> ActionRegistry:
     ]:
         registry.register(key, getattr(mainwindow, key))
 
-    registry.register_widget("widget_language_combo", lambda: mainwindow.cmb_language)
     return registry
 
 
@@ -47,9 +46,6 @@ def _build_spec(mainwindow) -> RibbonSpec:
                     RibbonItem("act_undo", kind="action", size="S"),
                     RibbonItem("act_redo", kind="action", size="S"),
                     RibbonItem("act_delete", kind="action", size="S"),
-                ]),
-                RibbonGroup(t("group.language"), items=[
-                    RibbonItem("widget_language_combo", kind="widget", size="S"),
                 ]),
             ]),
             RibbonTab(t("tab.model"), groups=[
