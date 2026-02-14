@@ -1,4 +1,4 @@
-# MiniBeam v0.2
+# MiniBeam v1.0
 
 A small 1D beam FEM GUI tool (Ribbon-like UI + right-click modeling) using **PyNiteFEA/Pynite** as the solver.
 

@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
         app_icon = self._resource_path("minibeam/assets/app_icon.svg")
         if app_icon.exists():
             self.setWindowIcon(QIcon(str(app_icon)))
-        self.setWindowTitle("MiniBeam v0.2.0")
+        self.setWindowTitle("MiniBeam v1.0.0")
         self.resize(1400, 850)
 
         # ---------------- Crash resilience ----------------
