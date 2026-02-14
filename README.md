@@ -1,6 +1,11 @@
-# MiniBeam v0.2
+# MiniBeam v1.0
 
 A small 1D beam FEM GUI tool (Ribbon-like UI + right-click modeling) using **PyNiteFEA/Pynite** as the solver.
+
+## v1.0 更新说明
+- 统一版本号为 **1.0.0**（代码版本、窗口标题与文档标题保持一致）。
+- 稳定提供一维梁建模、线弹性求解、结果图与 MS 安全裕度评估等 Phase-1 核心能力。
+- 持续优化功能说明与用户手册内容，便于快速上手与团队交付。
 
 ## Features (Phase-1)
 - Right-click add points on a 1D axis; drag points along X only; double-click to edit X.
