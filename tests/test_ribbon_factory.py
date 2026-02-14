@@ -80,3 +80,108 @@ def test_build_without_optional_right_area_hook(monkeypatch):
 
     assert isinstance(ribbon, _FakeRibbonBar)
     assert mainwindow.menubar is ribbon
+
+
+class _FakeSignal:
+    def __init__(self):
+        self._callbacks = []
+
+    def connect(self, callback):
+        self._callbacks.append(callback)
+
+    def disconnect(self, callback):
+        self._callbacks.remove(callback)
+
+    def emit(self):
+        for callback in list(self._callbacks):
+            callback()
+
+
+class _FakeActionForChanged:
+    def __init__(self):
+        self.changed = _FakeSignal()
+
+    def isEnabled(self):
+        return True
+
+    def icon(self):
+        return None
+
+    def toolTip(self):
+        return ""
+
+    def isCheckable(self):
+        return False
+
+    def text(self):
+        return "Action"
+
+
+class _FakeButtonForChanged:
+    def __init__(self):
+        self.deleted = False
+        self.sync_calls = 0
+
+    def setEnabled(self, _enabled):
+        if self.deleted:
+            raise RuntimeError("wrapped C/C++ object has been deleted")
+        self.sync_calls += 1
+
+    def setIcon(self, _icon):
+        pass
+
+    def setToolTip(self, _tip):
+        pass
+
+    def setText(self, _text):
+        pass
+
+
+def test_action_changed_auto_disconnects_after_button_deleted():
+    from minibeam.common_ui.ribbon.factory import PyQtRibbonFactory
+
+    factory = PyQtRibbonFactory()
+    action = _FakeActionForChanged()
+    button = _FakeButtonForChanged()
+
+    factory._bind_action_changed(button, action, "Action")
+    assert button.sync_calls == 1
+
+    button.deleted = True
+    action.changed.emit()
+    action.changed.emit()
+
+    assert len(action.changed._callbacks) == 0
+
+
+class _FakeButtonForWidth:
+    def __init__(self):
+        self.min_width = None
+        self.max_width = None
+
+    def setMinimumWidth(self, width):
+        self.min_width = width
+
+    def setMaximumWidth(self, width):
+        self.max_width = width
+
+
+class _FakePanelForWidth:
+    def addLargeButton(self, _text, _icon):
+        return _FakeButtonForWidth()
+
+    def addMediumButton(self, _text, _icon):
+        return _FakeButtonForWidth()
+
+    def addSmallButton(self, _text, _icon):
+        return _FakeButtonForWidth()
+
+
+def test_build_button_applies_uniform_width_for_all_sizes():
+    from minibeam.common_ui.ribbon.factory import PyQtRibbonFactory
+
+    panel = _FakePanelForWidth()
+    for size in ("L", "M", "S"):
+        button = PyQtRibbonFactory._build_button(panel, "T", None, size)
+        assert button.min_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
+        assert button.max_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH

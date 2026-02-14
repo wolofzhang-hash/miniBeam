@@ -16,6 +16,8 @@ class RibbonFactoryBase(ABC):
 
 
 class PyQtRibbonFactory(RibbonFactoryBase):
+    UNIFORM_BUTTON_WIDTH = 176
+
     def build(self, mainwindow: QMainWindow, spec: RibbonSpec, registry: ActionRegistry):
         from pyqtribbon import RibbonBar
 
@@ -49,22 +51,45 @@ class PyQtRibbonFactory(RibbonFactoryBase):
             button.setChecked(action.isChecked())
             button.clicked.connect(action.trigger)
             action.toggled.connect(button.setChecked)
-            action.changed.connect(lambda b=button, a=action, t=text: self._sync_button_state(b, a, t))
-            self._sync_button_state(button, action, text)
+            self._bind_action_changed(button, action, text)
             return
 
         button = self._build_button(panel, text, action.icon(), item.size)
         button.clicked.connect(action.trigger)
-        action.changed.connect(lambda b=button, a=action, t=text: self._sync_button_state(b, a, t))
-        self._sync_button_state(button, action, text)
+        self._bind_action_changed(button, action, text)
+
+    def _bind_action_changed(self, button, action: QAction, default_text: str):
+        def on_action_changed():
+            try:
+                self._sync_button_state(button, action, default_text)
+            except RuntimeError:
+                try:
+                    action.changed.disconnect(on_action_changed)
+                except (RuntimeError, TypeError):
+                    pass
+
+        action.changed.connect(on_action_changed)
+        on_action_changed()
 
     @staticmethod
     def _build_button(panel, text, icon, size: str):
         if size == "L":
-            return panel.addLargeButton(text, icon)
-        if size == "M":
-            return panel.addMediumButton(text, icon)
-        return panel.addSmallButton(text, icon)
+            button = panel.addLargeButton(text, icon)
+        elif size == "M":
+            button = panel.addMediumButton(text, icon)
+        else:
+            button = panel.addSmallButton(text, icon)
+
+        PyQtRibbonFactory._apply_uniform_button_width(button)
+        return button
+
+    @staticmethod
+    def _apply_uniform_button_width(button):
+        width = PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
+        if hasattr(button, "setMinimumWidth"):
+            button.setMinimumWidth(width)
+        if hasattr(button, "setMaximumWidth"):
+            button.setMaximumWidth(width)
 
     @staticmethod
     def _sync_button_state(button, action: QAction, default_text: str):

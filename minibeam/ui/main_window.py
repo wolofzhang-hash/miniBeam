@@ -190,9 +190,9 @@ class MainWindow(QMainWindow):
             QKeySequence(Qt.Key.Key_Backspace),
         ])
 
-        self.act_undo = QAction(self._tr("action.undo"), self)
+        self.act_undo = QAction(self._std_icon("SP_ArrowBack", "SP_BrowserBack"), self._tr("action.undo"), self)
         self.act_undo.setShortcut(QKeySequence.StandardKey.Undo)
-        self.act_redo = QAction(self._tr("action.redo"), self)
+        self.act_redo = QAction(self._std_icon("SP_ArrowForward", "SP_BrowserForward"), self._tr("action.redo"), self)
         self.act_redo.setShortcuts([
             QKeySequence.StandardKey.Redo,
             QKeySequence("Ctrl+Y"),
@@ -205,15 +205,6 @@ class MainWindow(QMainWindow):
         self.cmb_language.addItem(self._tr("language.zh"), "zh")
         self.cmb_language.addItem(self._tr("language.en"), "en")
         self.cmb_language.setCurrentIndex(0)
-
-        self.ribbon_right_host = QWidget()
-        ribbon_right_layout = QHBoxLayout(self.ribbon_right_host)
-        ribbon_right_layout.setContentsMargins(0, 0, 0, 0)
-        ribbon_right_layout.setSpacing(6)
-        ribbon_right_layout.addStretch(1)
-        ribbon_right_layout.addWidget(self.cmb_language)
-
-        root.addWidget(self.ribbon_right_host)
 
         self._build_ribbon()
 
@@ -457,12 +448,6 @@ class MainWindow(QMainWindow):
 
     def _build_ribbon(self):
         self.ribbon = build_main_ribbon(self)
-
-    def place_ribbon_right_area(self):
-        # Optional hook used by ribbon factory. We intentionally keep the
-        # right-area outside the ribbon bar to avoid corner-widget APIs.
-        if self.ribbon_right_host is not None:
-            self.ribbon_right_host.setVisible(True)
 
     def fit_all_views(self):
         self.canvas.fitInView(self.canvas.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)

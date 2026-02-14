@@ -29,6 +29,8 @@ def _build_registry(mainwindow) -> ActionRegistry:
     ]:
         registry.register(key, getattr(mainwindow, key))
 
+    registry.register_widget("language_switch", lambda: mainwindow.cmb_language)
+
     return registry
 
 
@@ -38,14 +40,17 @@ def _build_spec(mainwindow) -> RibbonSpec:
         tabs=[
             RibbonTab(t("tab.home"), groups=[
                 RibbonGroup(t("group.file"), items=[
-                    RibbonItem("act_new", kind="action", size="L"),
-                    RibbonItem("act_open", kind="action", size="L"),
-                    RibbonItem("act_save", kind="action", size="L"),
+                    RibbonItem("act_new", kind="action", size="M"),
+                    RibbonItem("act_open", kind="action", size="M"),
+                    RibbonItem("act_save", kind="action", size="M"),
                 ]),
                 RibbonGroup(t("group.edit"), items=[
                     RibbonItem("act_undo", kind="action", size="S"),
                     RibbonItem("act_redo", kind="action", size="S"),
                     RibbonItem("act_delete", kind="action", size="S"),
+                ]),
+                RibbonGroup(t("group.language"), items=[
+                    RibbonItem("language_switch", kind="widget", size="M"),
                 ]),
             ]),
             RibbonTab(t("tab.model"), groups=[
@@ -72,11 +77,11 @@ def _build_spec(mainwindow) -> RibbonSpec:
             RibbonTab(t("tab.analysis"), groups=[
                 RibbonGroup(t("group.solve"), items=[
                     RibbonItem("act_validate", kind="action", size="M"),
-                    RibbonItem("act_solve", kind="action", size="L"),
+                    RibbonItem("act_solve", kind="action", size="M"),
                 ]),
                 RibbonGroup(t("group.results"), items=[
                     RibbonItem("act_show_results", kind="action", size="M"),
-                    RibbonItem("act_export_csv", kind="action", size="L"),
+                    RibbonItem("act_export_csv", kind="action", size="M"),
                     RibbonItem("act_export_report", kind="action", size="M"),
                     RibbonItem("act_export_bundle", kind="action", size="S"),
                 ]),
