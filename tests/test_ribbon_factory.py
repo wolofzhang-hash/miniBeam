@@ -68,8 +68,8 @@ def test_build_skips_corner_widget_and_calls_optional_right_area_hook(monkeypatc
     assert mainwindow.menubar is ribbon
     assert mainwindow.right_area_calls == 1
     assert "font-size: 11px" in ribbon.stylesheet
-    assert ribbon.min_height == 96
-    assert ribbon.max_height == 110
+    assert ribbon.min_height == 78
+    assert ribbon.max_height == 92
 
 
 def test_build_without_optional_right_area_hook(monkeypatch):
@@ -202,7 +202,7 @@ def test_build_button_applies_uniform_width_for_all_sizes():
         assert button.max_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
 
 
-def test_main_ribbon_spec_uses_small_icons_for_interactive_items():
+def test_main_ribbon_spec_uses_large_icons_for_interactive_items():
     from minibeam.ui.ribbon_setup import _build_spec
 
     class _MW:
@@ -218,4 +218,4 @@ def test_main_ribbon_spec_uses_small_icons_for_interactive_items():
     ]
 
     assert sizes
-    assert set(sizes) == {"S"}
+    assert set(sizes) == {"L"}

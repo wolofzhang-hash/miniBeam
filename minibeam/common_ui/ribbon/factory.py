@@ -16,10 +16,13 @@ class RibbonFactoryBase(ABC):
 
 
 class PyQtRibbonFactory(RibbonFactoryBase):
-    UNIFORM_BUTTON_WIDTH = 104
+    UNIFORM_BUTTON_WIDTH = 116
     COMPACT_RIBBON_STYLESHEET = """
         QWidget {
             font-size: 11px;
+        }
+        QToolButton {
+            padding: 2px 8px;
         }
     """
 
@@ -48,9 +51,9 @@ class PyQtRibbonFactory(RibbonFactoryBase):
         if hasattr(ribbonbar, "setStyleSheet"):
             ribbonbar.setStyleSheet(cls.COMPACT_RIBBON_STYLESHEET)
         if hasattr(ribbonbar, "setMaximumHeight"):
-            ribbonbar.setMaximumHeight(110)
+            ribbonbar.setMaximumHeight(92)
         if hasattr(ribbonbar, "setMinimumHeight"):
-            ribbonbar.setMinimumHeight(96)
+            ribbonbar.setMinimumHeight(78)
 
     def _render_item(self, panel, item: RibbonItem, registry: ActionRegistry):
         if item.kind == "widget":
