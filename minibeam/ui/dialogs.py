@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import replace
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFormLayout, QLineEdit,
     QDoubleSpinBox, QLabel, QMessageBox, QComboBox, QGroupBox, QTreeWidget, QTreeWidgetItem
@@ -160,7 +161,7 @@ class MaterialManagerDialog(QDialog):
         self.setWindowTitle(self._txt("材料", "Materials"))
         self.resize(900, 520)
         self.prj = prj
-        self.model_materials = {uid: Material(**vars(mat)) for uid, mat in prj.materials.items()}
+        self.model_materials = {uid: replace(mat) for uid, mat in prj.materials.items()}
         self.library_materials = self._load_library_materials()
         self._library_edit_enabled = False
 
@@ -425,7 +426,7 @@ class MaterialManagerDialog(QDialog):
         self.refresh()
 
     def accept(self):
-        self.prj.materials = {uid: Material(**vars(mat)) for uid, mat in self.model_materials.items()}
+        self.prj.materials = {uid: replace(mat) for uid, mat in self.model_materials.items()}
         self.prj.normalize_member_assignments()
         super().accept()
 
@@ -462,7 +463,7 @@ class SectionManagerDialog(QDialog):
         self.setWindowTitle(self._txt("截面", "Sections"))
         self.resize(900, 520)
         self.prj = prj
-        self.model_sections = {uid: Section(**vars(sec)) for uid, sec in prj.sections.items()}
+        self.model_sections = {uid: replace(sec) for uid, sec in prj.sections.items()}
         self.library_sections = self._load_library_sections()
         self._library_edit_enabled = False
 
@@ -890,6 +891,6 @@ class SectionManagerDialog(QDialog):
             except Exception as e:
                 QMessageBox.warning(self, self._txt("截面", "Sections"), self._txt(f"参数无效，无法保存：{e}", f"Invalid section parameters: {e}"))
                 return
-        self.prj.sections = {uid: Section(**vars(sec)) for uid, sec in self.model_sections.items()}
+        self.prj.sections = {uid: replace(sec) for uid, sec in self.model_sections.items()}
         self.prj.normalize_member_assignments()
         super().accept()

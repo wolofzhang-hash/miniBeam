@@ -14,6 +14,7 @@ import traceback
 import json
 import logging
 import os
+from dataclasses import replace
 from pathlib import Path
 import numpy as np
 
@@ -1313,13 +1314,13 @@ class MainWindow(QMainWindow):
         default_mat = next(iter(self.project.materials.values()), None)
         if default_mat is None:
             default_mat = Material(name="steel", E=206000.0, G=79300.0, nu=0.3, rho=7.85e-6, sigma_y=235.0)
-        self.project.materials = {default_mat.uid: Material(**vars(default_mat))}
+        self.project.materials = {default_mat.uid: replace(default_mat)}
 
         default_sec = next(iter(self.project.sections.values()), None)
         if default_sec is None:
             sp = rect_solid(100.0, 10.0)
             default_sec = Section(name="Rect100x10", type="RectSolid", A=sp.A, Iy=sp.Iy, Iz=sp.Iz, J=sp.J, c_y=sp.c_y, c_z=sp.c_z, Zp_y=sp.Zp_y, Zp_z=sp.Zp_z, shape_factor_y=sp.shape_factor_y, shape_factor_z=sp.shape_factor_z, shape_factor_t=sp.shape_factor_t, Zp=sp.Zp_z, shape_factor=sp.shape_factor_z, p1=100.0, p2=10.0)
-        self.project.sections = {default_sec.uid: Section(**vars(default_sec))}
+        self.project.sections = {default_sec.uid: replace(default_sec)}
 
         self.project.points.clear()
         self.project.members.clear()
