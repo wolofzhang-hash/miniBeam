@@ -36,7 +36,7 @@ def _build_registry(mainwindow) -> ActionRegistry:
 
 def _build_spec(mainwindow) -> RibbonSpec:
     t = mainwindow._tr
-    button_size = "M"
+    button_size = "S"
     return RibbonSpec(
         tabs=[
             RibbonTab(t("tab.home"), groups=[

@@ -16,12 +16,18 @@ class RibbonFactoryBase(ABC):
 
 
 class PyQtRibbonFactory(RibbonFactoryBase):
-    UNIFORM_BUTTON_WIDTH = 132
+    UNIFORM_BUTTON_WIDTH = 104
+    COMPACT_RIBBON_STYLESHEET = """
+        QWidget {
+            font-size: 11px;
+        }
+    """
 
     def build(self, mainwindow: QMainWindow, spec: RibbonSpec, registry: ActionRegistry):
         from pyqtribbon import RibbonBar
 
         ribbonbar = RibbonBar(mainwindow)
+        self._apply_compact_ribbon_style(ribbonbar)
         for tab in spec.tabs:
             category = ribbonbar.addCategory(tab.title)
             for group in tab.groups:
@@ -36,6 +42,15 @@ class PyQtRibbonFactory(RibbonFactoryBase):
             place_right_area()
 
         return ribbonbar
+
+    @classmethod
+    def _apply_compact_ribbon_style(cls, ribbonbar):
+        if hasattr(ribbonbar, "setStyleSheet"):
+            ribbonbar.setStyleSheet(cls.COMPACT_RIBBON_STYLESHEET)
+        if hasattr(ribbonbar, "setMaximumHeight"):
+            ribbonbar.setMaximumHeight(110)
+        if hasattr(ribbonbar, "setMinimumHeight"):
+            ribbonbar.setMinimumHeight(96)
 
     def _render_item(self, panel, item: RibbonItem, registry: ActionRegistry):
         if item.kind == "widget":
