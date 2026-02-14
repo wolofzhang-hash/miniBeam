@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import QMainWindow, QWidget
+from PyQt6.QtWidgets import QMainWindow
 
 from .registry import ActionRegistry
 from .spec import RibbonItem, RibbonSpec
@@ -27,11 +27,12 @@ class PyQtRibbonFactory(RibbonFactoryBase):
                 for item in group.items:
                     self._render_item(panel, item, registry)
 
-        corner_api = getattr(ribbonbar, "setCornerWidget", None)
-        if callable(corner_api):
-            corner_api(QWidget(ribbonbar))
-
         mainwindow.setMenuBar(ribbonbar)
+
+        place_right_area = getattr(mainwindow, "place_ribbon_right_area", None)
+        if callable(place_right_area):
+            place_right_area()
+
         return ribbonbar
 
     def _render_item(self, panel, item: RibbonItem, registry: ActionRegistry):

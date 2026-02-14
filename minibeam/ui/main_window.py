@@ -206,6 +206,15 @@ class MainWindow(QMainWindow):
         self.cmb_language.addItem(self._tr("language.en"), "en")
         self.cmb_language.setCurrentIndex(0)
 
+        self.ribbon_right_host = QWidget()
+        ribbon_right_layout = QHBoxLayout(self.ribbon_right_host)
+        ribbon_right_layout.setContentsMargins(0, 0, 0, 0)
+        ribbon_right_layout.setSpacing(6)
+        ribbon_right_layout.addStretch(1)
+        ribbon_right_layout.addWidget(self.cmb_language)
+
+        root.addWidget(self.ribbon_right_host)
+
         self._build_ribbon()
 
         # main splitter
@@ -448,6 +457,12 @@ class MainWindow(QMainWindow):
 
     def _build_ribbon(self):
         self.ribbon = build_main_ribbon(self)
+
+    def place_ribbon_right_area(self):
+        # Optional hook used by ribbon factory. We intentionally keep the
+        # right-area outside the ribbon bar to avoid corner-widget APIs.
+        if self.ribbon_right_host is not None:
+            self.ribbon_right_host.setVisible(True)
 
     def fit_all_views(self):
         self.canvas.fitInView(self.canvas.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
