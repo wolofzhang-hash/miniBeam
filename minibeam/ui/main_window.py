@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QInputDialog, QTableWidget, QTableWidgetItem, QDialog,
     QDialogButtonBox, QRadioButton, QTextBrowser
 )
-from PyQt6.QtCore import Qt, QTimer, QSize, QUrl
-from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices, QFontMetrics
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap, QColor, QDesktopServices
 from PyQt6.QtWidgets import QStyle, QFileDialog, QHeaderView
 
 import sys
@@ -29,6 +29,7 @@ from .canvas_view import BeamCanvas
 from .dialogs import MaterialManagerDialog, SectionManagerDialog
 from .results_view import ResultsView, ResultsGridDialog
 from .i18n import LANG_ZH, tr
+from .ribbon_setup import build_main_ribbon
 from ..core.undo import UndoStack
 from ..core.library_store import (
     load_section_library,
@@ -135,10 +136,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(6, 6, 6, 6)
         root.setSpacing(6)
 
-        
-        # ---------------- Ribbon (Word-like tabs with large icons) ----------------
-        icon_size = QSize(40, 40)
-
         # Actions (wired in _connect)
         self.act_new = QAction(self._std_icon("SP_FileIcon", "SP_DirIcon"), self._tr("action.new"), self)
         self.act_open = QAction(self._std_icon("SP_DialogOpenButton", "SP_DirOpenIcon"), self._tr("action.open"), self)
@@ -181,6 +178,8 @@ class MainWindow(QMainWindow):
         self.act_export_bundle = QAction(self._std_icon("SP_DialogSaveButton", "SP_DriveHDIcon"), self._tr("action.export_bundle"), self)
         self.act_help_pdf = QAction(self._std_icon("SP_DialogHelpButton", "SP_MessageBoxInformation"), self._tr("action.help"), self)
         self.act_about = QAction(self._std_icon("SP_MessageBoxInformation", "SP_DialogHelpButton"), self._tr("action.copyright"), self)
+        self.act_fit_all = QAction(self._std_icon("SP_DialogResetButton", "SP_ArrowUp"), self._tr("action.fit_all"), self)
+        self.act_reset_view = QAction(self._std_icon("SP_BrowserReload", "SP_DialogResetButton"), self._tr("action.reset_view"), self)
 
         # Shortcuts
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
@@ -202,87 +201,12 @@ class MainWindow(QMainWindow):
         self.addAction(self.act_redo)
         self.addAction(self.act_delete)
 
-        # Ribbon widget
-        from PyQt6.QtWidgets import QTabWidget, QToolButton, QGridLayout, QSizePolicy
-
-        self._ribbon_tab_keys: list[str] = []
-        self._ribbon_buttons: list[QToolButton] = []
-
-        self.ribbon = QTabWidget()
-        self.ribbon.setDocumentMode(True)
-        root.addWidget(self.ribbon, 0)
-
         self.cmb_language = QComboBox()
         self.cmb_language.addItem(self._tr("language.zh"), "zh")
         self.cmb_language.addItem(self._tr("language.en"), "en")
         self.cmb_language.setCurrentIndex(0)
 
-        def mk_group(title_key: str, items: list[object]) -> QWidget:
-            gb = QGroupBox(self._tr(title_key))
-            gb.setProperty("i18n_key", title_key)
-            lay = QGridLayout(gb)
-            lay.setContentsMargins(8, 8, 8, 8)
-            lay.setHorizontalSpacing(8)
-            lay.setVerticalSpacing(8)
-            col = 0
-            for it in items:
-                if isinstance(it, QAction):
-                    btn = QToolButton()
-                    btn.setDefaultAction(it)
-                    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-                    btn.setIconSize(icon_size)
-                    btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-                    lay.addWidget(btn, 0, col)
-                    self._ribbon_buttons.append(btn)
-                    col += 1
-                elif isinstance(it, QWidget):
-                    lay.addWidget(it, 0, col)
-                    col += 1
-                else:
-                    # ignore unknown item types
-                    pass
-            return gb
-
-        def mk_tab(tab_key: str, groups: list[QWidget]) -> QWidget:
-            w = QWidget()
-            hl = QHBoxLayout(w)
-            hl.setContentsMargins(6, 6, 6, 6)
-            hl.setSpacing(10)
-            for g in groups:
-                hl.addWidget(g)
-            hl.addStretch(1)
-            self.ribbon.addTab(w, self._tr(tab_key))
-            self._ribbon_tab_keys.append(tab_key)
-            return w
-
-        mk_tab("tab.home", [
-            mk_group("group.file", [self.act_new, self.act_open, self.act_save]),
-            mk_group("group.model", [self.act_select, self.act_add_point, self.act_delete]),
-            mk_group("group.language", [self.cmb_language]),
-        ])
-
-        mk_tab("tab.properties", [
-            mk_group("group.libraries", [self.act_materials, self.act_sections]),
-            mk_group("group.assign", [self.act_assign_prop]),
-        ])
-
-        mk_tab("tab.constraints_loads", [
-            mk_group("group.constraints", [self.act_add_dx, self.act_add_bush]),
-            mk_group("group.loads", [self.act_add_fy, self.act_add_udl]),
-        ])
-
-        mk_tab("tab.background", [
-            mk_group("group.background", [self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear]),
-        ])
-
-        mk_tab("tab.solve_results", [
-            mk_group("group.solve", [self.act_validate, self.act_solve]),
-            mk_group("group.results", [self.act_show_results, self.act_export_csv, self.act_export_report, self.act_export_bundle]),
-        ])
-
-        mk_tab("tab.help", [
-            mk_group("group.support", [self.act_help_pdf, self.act_about]),
-        ])
+        self._build_ribbon()
 
         # main splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -388,7 +312,6 @@ class MainWindow(QMainWindow):
 
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([180, 1160, 420])
-        self._sync_ribbon_button_widths()
 
     def _connect(self):
         # --- File ---
@@ -440,6 +363,8 @@ class MainWindow(QMainWindow):
         self.act_export_bundle.triggered.connect(self.export_results_bundle)
         self.act_help_pdf.triggered.connect(self.open_help_pdf)
         self.act_about.triggered.connect(self.show_about_dialog)
+        self.act_fit_all.triggered.connect(self.fit_all_views)
+        self.act_reset_view.triggered.connect(self.reset_views)
         self.cmb_language.currentIndexChanged.connect(self._on_language_changed)
         # --- Canvas signals ---
         self.canvas.selection_changed.connect(self.on_selection_changed)
@@ -493,16 +418,13 @@ class MainWindow(QMainWindow):
         self.act_export_bundle.setText(self._tr("action.export_bundle"))
         self.act_help_pdf.setText(self._tr("action.help"))
         self.act_about.setText(self._tr("action.copyright"))
+        self.act_fit_all.setText(self._tr("action.fit_all"))
+        self.act_reset_view.setText(self._tr("action.reset_view"))
         self.act_undo.setText(self._tr("action.undo"))
         self.act_redo.setText(self._tr("action.redo"))
         self.cmb_language.setItemText(0, self._tr("language.zh"))
         self.cmb_language.setItemText(1, self._tr("language.en"))
-        for idx, tab_key in enumerate(self._ribbon_tab_keys):
-            self.ribbon.setTabText(idx, self._tr(tab_key))
-        for gb in self.ribbon.findChildren(QGroupBox):
-            key = gb.property("i18n_key")
-            if isinstance(key, str):
-                gb.setTitle(self._tr(key))
+        self._build_ribbon()
         self.tree.setHeaderLabels([self._tr("objects")])
         self.xy_label.setText(self._tr("xy_view"))
         if self.xz_label is not None:
@@ -523,27 +445,19 @@ class MainWindow(QMainWindow):
         if self.canvas_xz is not None:
             self.canvas_xz.set_translator(self._tr)
         self.results_view.set_translator(self._tr)
-        self._sync_ribbon_button_widths()
 
-    def _sync_ribbon_button_widths(self):
-        if not self._ribbon_buttons:
-            return
-        fm = QFontMetrics(self.font())
-        button_keys = [
-            "action.new", "action.open", "action.save", "action.select", "action.add_point", "action.delete",
-            "action.materials", "action.sections", "action.assign_property", "action.constraint", "action.bush",
-            "action.load", "action.udl", "action.import", "action.calibrate", "action.opacity", "action.bw",
-            "action.show_bg", "action.hide_bg", "action.clear", "action.validate", "action.solve",
-            "action.results", "action.export_csv", "action.export_report", "action.export_bundle", "action.help", "action.copyright",
-        ]
-        max_text_w = 0
-        for key in button_keys:
-            for lang in ("zh", "en"):
-                max_text_w = max(max_text_w, fm.horizontalAdvance(tr(lang, key)))
-        # Keep ribbon buttons more compact: roughly half of previous baseline width.
-        fixed_w = max(37, (max_text_w + 28) // 2)
-        for btn in self._ribbon_buttons:
-            btn.setMinimumWidth(fixed_w)
+    def _build_ribbon(self):
+        self.ribbon = build_main_ribbon(self)
+
+    def fit_all_views(self):
+        self.canvas.fitInView(self.canvas.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        if self.canvas_xz is not None:
+            self.canvas_xz.fitInView(self.canvas_xz.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def reset_views(self):
+        self.canvas.resetTransform()
+        if self.canvas_xz is not None:
+            self.canvas_xz.resetTransform()
 
     def _ensure_spatial_views(self):
         wants_3d = getattr(self.project, "spatial_mode", "2D") == "3D"
