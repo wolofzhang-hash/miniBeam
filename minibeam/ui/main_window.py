@@ -208,6 +208,8 @@ class MainWindow(QMainWindow):
         self.cmb_language.setCurrentIndex(0)
 
         self._build_ribbon()
+        self._apply_action_status_tips()
+        self.statusBar().showMessage(self._tr("status.ready"))
 
         # main splitter
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -423,6 +425,8 @@ class MainWindow(QMainWindow):
         self.act_reset_view.setText(self._tr("action.reset_view"))
         self.act_undo.setText(self._tr("action.undo"))
         self.act_redo.setText(self._tr("action.redo"))
+        self._apply_action_status_tips()
+        self.statusBar().showMessage(self._tr("status.ready"))
         self.cmb_language.setItemText(0, self._tr("language.zh"))
         self.cmb_language.setItemText(1, self._tr("language.en"))
         self._build_ribbon()
@@ -450,6 +454,22 @@ class MainWindow(QMainWindow):
 
     def _build_ribbon(self):
         self.ribbon = build_main_ribbon(self)
+
+    def _apply_action_status_tips(self):
+        actions = [
+            self.act_new, self.act_open, self.act_save,
+            self.act_undo, self.act_redo, self.act_delete,
+            self.act_select, self.act_add_point,
+            self.act_materials, self.act_sections, self.act_assign_prop,
+            self.act_add_dx, self.act_add_bush, self.act_add_fy, self.act_add_udl,
+            self.act_validate, self.act_solve,
+            self.act_show_results, self.act_export_csv, self.act_export_report, self.act_export_bundle,
+            self.act_fit_all, self.act_reset_view,
+            self.act_bg_import, self.act_bg_calibrate, self.act_bg_opacity, self.act_bg_bw, self.act_bg_visible, self.act_bg_clear,
+            self.act_help_pdf, self.act_about,
+        ]
+        for action in actions:
+            action.setStatusTip(self._tr("status.action", action=action.text()))
 
     def fit_all_views(self):
         self.canvas.fitInView(self.canvas.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)

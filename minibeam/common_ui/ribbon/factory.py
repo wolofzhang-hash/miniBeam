@@ -79,6 +79,7 @@ class PyQtRibbonFactory(RibbonFactoryBase):
         button.setEnabled(action.isEnabled())
         button.setIcon(action.icon())
         button.setToolTip(action.toolTip())
+        button.setStatusTip(action.statusTip())
         if action.isCheckable():
             button.setCheckable(True)
             button.setChecked(action.isChecked())
