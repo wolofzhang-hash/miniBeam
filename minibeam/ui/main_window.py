@@ -446,6 +446,7 @@ class MainWindow(QMainWindow):
         if self.canvas_xz is not None:
             self.canvas_xz.set_translator(self._tr)
         self.results_view.set_translator(self._tr)
+        self.refresh_tree()
 
     def _build_ribbon(self):
         self.ribbon = build_main_ribbon(self)
