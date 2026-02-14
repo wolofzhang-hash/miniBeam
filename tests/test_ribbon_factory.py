@@ -18,24 +18,9 @@ def _stub_pyqt_modules(monkeypatch):
 class _FakeRibbonBar:
     def __init__(self, parent):
         self.parent = parent
-        self.stylesheet = None
-        self.min_height = None
-        self.max_height = None
 
     def addCategory(self, _title):
         raise AssertionError("No categories should be added in this test")
-
-    def setCornerWidget(self, _widget):
-        raise AssertionError("setCornerWidget must not be called")
-
-    def setStyleSheet(self, stylesheet):
-        self.stylesheet = stylesheet
-
-    def setMinimumHeight(self, height):
-        self.min_height = height
-
-    def setMaximumHeight(self, height):
-        self.max_height = height
 
 
 class _FakeMainWindow:
@@ -50,7 +35,7 @@ class _FakeMainWindow:
         self.right_area_calls += 1
 
 
-def test_build_skips_corner_widget_and_calls_optional_right_area_hook(monkeypatch):
+def test_build_uses_default_ribbon_style_and_calls_optional_right_area_hook(monkeypatch):
     from minibeam.common_ui.ribbon.factory import PyQtRibbonFactory
     from minibeam.common_ui.ribbon.registry import ActionRegistry
     from minibeam.common_ui.ribbon.spec import RibbonSpec
@@ -67,9 +52,6 @@ def test_build_skips_corner_widget_and_calls_optional_right_area_hook(monkeypatc
     assert isinstance(ribbon, _FakeRibbonBar)
     assert mainwindow.menubar is ribbon
     assert mainwindow.right_area_calls == 1
-    assert "font-size: 11px" in ribbon.stylesheet
-    assert ribbon.min_height == 78
-    assert ribbon.max_height == 92
 
 
 def test_build_without_optional_right_area_hook(monkeypatch):
@@ -169,53 +151,38 @@ def test_action_changed_auto_disconnects_after_button_deleted():
     assert len(action.changed._callbacks) == 0
 
 
-class _FakeButtonForWidth:
+class _FakePanelForButtons:
     def __init__(self):
-        self.min_width = None
-        self.max_width = None
+        self.calls = 0
 
-    def setMinimumWidth(self, width):
-        self.min_width = width
-
-    def setMaximumWidth(self, width):
-        self.max_width = width
-
-
-class _FakePanelForWidth:
     def addLargeButton(self, _text, _icon):
-        return _FakeButtonForWidth()
-
-    def addMediumButton(self, _text, _icon):
-        return _FakeButtonForWidth()
-
-    def addSmallButton(self, _text, _icon):
-        return _FakeButtonForWidth()
+        self.calls += 1
+        return object()
 
 
-def test_build_button_applies_uniform_width_for_all_sizes():
+def test_build_button_uses_single_default_button_type():
     from minibeam.common_ui.ribbon.factory import PyQtRibbonFactory
 
-    panel = _FakePanelForWidth()
-    for size in ("L", "M", "S"):
-        button = PyQtRibbonFactory._build_button(panel, "T", None, size)
-        assert button.min_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
-        assert button.max_width == PyQtRibbonFactory.UNIFORM_BUTTON_WIDTH
+    panel = _FakePanelForButtons()
+    PyQtRibbonFactory._build_button(panel, "T", None)
+
+    assert panel.calls == 1
 
 
-def test_main_ribbon_spec_uses_large_icons_for_interactive_items():
+def test_main_ribbon_spec_no_longer_requires_explicit_size_configuration():
     from minibeam.ui.ribbon_setup import _build_spec
 
     class _MW:
         _tr = staticmethod(lambda key, **kwargs: key)
 
     spec = _build_spec(_MW())
-    sizes = [
-        item.size
+    interactive_items = [
+        item
         for tab in spec.tabs
         for group in tab.groups
         for item in group.items
         if item.kind in {"action", "toggle"}
     ]
 
-    assert sizes
-    assert set(sizes) == {"L"}
+    assert interactive_items
+    assert all(not hasattr(item, "size") for item in interactive_items)
