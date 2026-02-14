@@ -16,7 +16,7 @@ class RibbonFactoryBase(ABC):
 
 
 class PyQtRibbonFactory(RibbonFactoryBase):
-    UNIFORM_BUTTON_WIDTH = 176
+    UNIFORM_BUTTON_WIDTH = 132
 
     def build(self, mainwindow: QMainWindow, spec: RibbonSpec, registry: ActionRegistry):
         from pyqtribbon import RibbonBar
